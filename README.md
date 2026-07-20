@@ -24,11 +24,23 @@ Open daarna `http://localhost:8080` en ga naar `/login`.
 fly secrets set SESSION_SECRET="$(openssl rand -base64 48)"
 ```
 
-6. Maak na de eerste deploy een admin aan in de machine met de gemounte database:
+6. Maak na de eerste deploy een admin aan in de machine met de gemounte database. Gebruik hiervoor `fly ssh console`, niet je lokale `DATA_DIR=./data`, want Fly leest de admin uit `/data/hyper-admin.json` op het volume:
 
 ```bash
-fly ssh console -C 'cd /app && node scripts/create-admin.js beheerder "een-heel-lang-uniek-wachtwoord"'
+fly ssh console -a hyper -C 'cd /app && node scripts/create-admin.js beheerder "een-heel-lang-uniek-wachtwoord"'
 ```
+
+### Login op productie herstellen
+
+Als je lokaal `DATA_DIR=./data npm run create-admin -- ...` hebt gedraaid en daarna deployt, staat de admin alleen op je Mac in `./data/hyper-admin.json`. Die lokale map wordt niet naar het Fly-volume gekopieerd. Herstel productie zo:
+
+```bash
+fly secrets set -a hyper SESSION_SECRET="$(openssl rand -base64 48)"
+fly deploy -a hyper
+fly ssh console -a hyper -C 'cd /app && node scripts/create-admin.js beheerder "een-heel-lang-uniek-wachtwoord"'
+```
+
+Let op: verander `SESSION_SECRET` daarna niet meer bij iedere start of deploy. Een nieuwe secret maakt alleen bestaande sessiecookies ongeldig; het adminwachtwoord zelf staat los daarvan in `/data/hyper-admin.json`.
 
 ## Deploy naar Fly.io
 
