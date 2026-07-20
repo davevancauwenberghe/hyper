@@ -40,6 +40,7 @@ const layout = (title, content, { admin = false, error = '', notice = '' } = {})
     ${notice ? `<p class="flash notice">${escapeHtml(notice)}</p>` : ''}
     ${content}
   </main>
+  <footer class="site-footer"><p>Hyper is op geen enkele manier medisch bewezen of medisch gevalideerd. Controleer nieuwe of aanhoudende klachten altijd bij je zorgverlener om zeker te weten wat er speelt.</p></footer>
   <script src="/app.js"></script>
 </body>
 </html>`;
@@ -57,7 +58,7 @@ function collect(req) { return new Promise(resolve => { let b=''; req.on('data',
 function parseLabels(value) { return [...new Set(String(value || '').split(',').map(v => v.trim()).filter(Boolean))].slice(0, 12); }
 function postCard(post) {
   const labels = post.labels || [];
-  return `<article class="card"><div class="card-top"><p class="eyebrow">${escapeHtml(post.author)}</p>${labels.map(l => `<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div><h2><a href="/posts/${post.id}">${escapeHtml(post.title)}</a></h2><p>${escapeHtml(post.body).slice(0, 230)}${post.body.length > 230 ? '…' : ''}</p>${(post.replies || []).length ? `<p class="reply-count">${post.replies.length} beheerreactie${post.replies.length === 1 ? '' : 's'}</p>` : ''}</article>`;
+  return `<article class="card"><div class="card-top"><p class="eyebrow">${escapeHtml(post.author)}</p>${labels.map(l => `<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div><h2><a href="/posts/${post.id}">${escapeHtml(post.title)}</a></h2><p>${escapeHtml(post.body).slice(0, 230)}${post.body.length > 230 ? '…' : ''}</p>${(post.replies || []).length ? `<p class="reply-count">${post.replies.length} reactie${post.replies.length === 1 ? '' : 's'}</p>` : ''}</article>`;
 }
 function renderReplies(post, { admin = false } = {}) {
   const replies = post.replies || [];
@@ -66,7 +67,7 @@ function renderReplies(post, { admin = false } = {}) {
   return `<section class="replies" aria-labelledby="replies-title"><h2 id="replies-title">Reacties</h2>${replies.map(reply => `<article class="reply"><p class="eyebrow">Reactie op ${escapeHtml(reply.originalReplier || post.author)}</p><h3>${escapeHtml(reply.author || 'Beheerder')}</h3><div>${escapeHtml(reply.body).replace(/\n/g, '<br>')}</div>${admin ? `<div class="reply-actions"><a class="button secondary" href="/admin/reply/${post.id}/${reply.id}/edit">Reactie bewerken</a><form method="post" action="/admin/reply/${post.id}/${reply.id}/delete"><button class="danger" type="submit">Reactie verwijderen</button></form></div>` : ''}</article>`).join('')}</section>`;
 }
 function adminReplyForm(post) {
-  return `<section class="panel reply-panel"><h2>Beheerreactie toevoegen</h2><form method="post" action="/admin/reply/${post.id}" class="stack"><label>Naam originele replier<input name="originalReplier" value="${escapeHtml(post.author)}" required></label><label>Naam beheerder<input name="author" value="Beheerder" required></label><label>Reactie<textarea name="body" rows="6" required placeholder="Schrijf hier je reactie…"></textarea></label><button>Reactie opslaan</button></form></section>`;
+  return `<section class="panel reply-panel"><h2>Reactie toevoegen</h2><form method="post" action="/admin/reply/${post.id}" class="stack"><label>Naam originele replier<input name="originalReplier" value="${escapeHtml(post.author)}" required></label><label>Naam beheerder<input name="author" value="Beheerder" required></label><label>Reactie<textarea name="body" rows="6" required placeholder="Schrijf hier je reactie…"></textarea></label><button>Reactie opslaan</button></form></section>`;
 }
 function withRequest(req) {
   const cookies = parseCookies(req.headers.cookie);
@@ -85,10 +86,13 @@ async function handler(req, res) {
     const q = (req.urlObj.searchParams.get('q') || '').trim();
     const label = (req.urlObj.searchParams.get('label') || '').trim();
     let posts = allPosts().sort((a,b)=>a.title.localeCompare(b.title,'nl'));
-    if (q) posts = posts.filter(p => `${p.title} ${p.author} ${p.body} ${(p.labels||[]).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
+    if (q) posts = posts.filter(p => {
+      const replyText = (p.replies || []).map(reply => `${reply.originalReplier || ''} ${reply.author || ''} ${reply.body || ''}`).join(' ');
+      return `${p.title} ${p.author} ${p.body} ${(p.labels||[]).join(' ')} ${replyText}`.toLowerCase().includes(q.toLowerCase());
+    });
     if (label) posts = posts.filter(p => (p.labels || []).includes(label));
     const allLabels = [...new Set(allPosts().flatMap(p => p.labels || []))].sort((a,b)=>a.localeCompare(b,'nl'));
-    return send(res, layout('Start', `<section class="hero"><div><p class="eyebrow">Rustige herkenningsplek</p><h1>Een zachte encyclopedie van lichamelijke stress-signalen.</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel of label en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${posts.length ? posts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>`, { admin: isAdmin(req) }));
+    return send(res, layout('Start', `<section class="hero"><div><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van lichamelijke stresssignalen.</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${posts.length ? posts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>`, { admin: isAdmin(req) }));
   }
   if (method === 'GET' && pathname.startsWith('/posts/')) {
     const id = decodeURIComponent(pathname.split('/').pop()); const post = allPosts().find(p => p.id === id);
