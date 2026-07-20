@@ -1,0 +1,90 @@
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { allPosts, savePosts, getAdmin, verifyPassword } = require('./store');
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret || sessionSecret.length < 32) throw new Error('SESSION_SECRET must be set and at least 32 characters long.');
+const sessions = new Map();
+
+const layout = (title, content, { admin = false, error = '', notice = '' } = {}) => `<!doctype html>
+<html lang="nl" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Hyper verzamelt herkenbare verhalen over hyperventilatie, stress en lichamelijke sensaties.">
+  <title>${escapeHtml(title)} · Hyper</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span>Hyper</span><small>verhalen die geruststellen</small></a>
+    <nav>
+      ${admin ? '<a href="/admin">Beheer</a><form method="post" action="/logout"><button>Uitloggen</button></form>' : '<a href="/login">Login</a>'}
+      <button class="theme-toggle" type="button" aria-label="Wissel licht/donker">☾</button>
+    </nav>
+  </header>
+  <main>
+    ${error ? `<p class="flash error">${escapeHtml(error)}</p>` : ''}
+    ${notice ? `<p class="flash notice">${escapeHtml(notice)}</p>` : ''}
+    ${content}
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>`;
+
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+}
+function isAdmin(req) { return Boolean(req.admin); }
+function requireAdmin(req, res) { if (!isAdmin(req)) { redirect(res, '/login'); return true; } return false; }
+function sign(value) { return crypto.createHmac('sha256', sessionSecret).update(value).digest('hex'); }
+function parseCookies(header = '') { return Object.fromEntries(header.split(';').map(v => v.trim().split('=')).filter(v => v[0]).map(([k,...r]) => [k, decodeURIComponent(r.join('='))])); }
+function redirect(res, to) { res.writeHead(302, { Location: to }); res.end(); }
+function send(res, html, code = 200, type = 'text/html; charset=utf-8') { res.writeHead(code, { 'Content-Type': type }); res.end(html); }
+function collect(req) { return new Promise(resolve => { let b=''; req.on('data', c => b += c); req.on('end', () => resolve(Object.fromEntries(new URLSearchParams(b)))); }); }
+function parseLabels(value) { return [...new Set(String(value || '').split(',').map(v => v.trim()).filter(Boolean))].slice(0, 12); }
+function postCard(post) {
+  const labels = post.labels || [];
+  return `<article class="card"><div class="card-top"><p class="eyebrow">${escapeHtml(post.author)}</p>${labels.map(l => `<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div><h2><a href="/posts/${post.id}">${escapeHtml(post.title)}</a></h2><p>${escapeHtml(post.body).slice(0, 230)}${post.body.length > 230 ? '…' : ''}</p></article>`;
+}
+function withRequest(req) {
+  const cookies = parseCookies(req.headers.cookie);
+  const [sid, sig] = String(cookies.hyper_session || '').split('.');
+  req.admin = Boolean(sid && sig === sign(sid) && sessions.get(sid));
+  req.urlObj = new URL(req.url, 'http://localhost');
+}
+
+async function handler(req, res) {
+  withRequest(req);
+  const method = req.method;
+  const pathname = req.urlObj.pathname;
+  if (pathname === '/style.css') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'style.css')), 200, 'text/css');
+  if (pathname === '/app.js') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js')), 200, 'application/javascript');
+  if (method === 'GET' && pathname === '/') {
+    const q = (req.urlObj.searchParams.get('q') || '').trim();
+    const label = (req.urlObj.searchParams.get('label') || '').trim();
+    let posts = allPosts().sort((a,b)=>a.title.localeCompare(b.title,'nl'));
+    if (q) posts = posts.filter(p => `${p.title} ${p.author} ${p.body} ${(p.labels||[]).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
+    if (label) posts = posts.filter(p => (p.labels || []).includes(label));
+    const allLabels = [...new Set(allPosts().flatMap(p => p.labels || []))].sort((a,b)=>a.localeCompare(b,'nl'));
+    return send(res, layout('Start', `<section class="hero"><div><p class="eyebrow">Rustige herkenningsplek</p><h1>Een zachte encyclopedie van lichamelijke stress-signalen.</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel of label en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${posts.length ? posts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>`, { admin: isAdmin(req) }));
+  }
+  if (method === 'GET' && pathname.startsWith('/posts/')) {
+    const id = decodeURIComponent(pathname.split('/').pop()); const post = allPosts().find(p => p.id === id);
+    if (!post) return send(res, layout('Niet gevonden', '<p class="empty">Dit verhaal bestaat niet.</p>', { admin: isAdmin(req) }), 404);
+    return send(res, layout(post.title, `<article class="story"><a href="/">← terug</a><p class="eyebrow">${escapeHtml(post.author)}</p><h1>${escapeHtml(post.title)}</h1><div class="labels">${(post.labels||[]).map(l=>`<span class="label">${escapeHtml(l)}</span>`).join('')}</div><div class="body">${escapeHtml(post.body).replace(/\n/g, '<br>')}</div>${isAdmin(req) ? `<p><a class="button" href="/admin/edit/${post.id}">Bewerken</a></p>` : ''}</article>`, { admin: isAdmin(req) }));
+  }
+  if (method === 'GET' && pathname === '/login') return send(res, layout('Login', `<section class="panel narrow"><h1>Beheerlogin</h1><form method="post" action="/login" class="stack"><label>Gebruikersnaam<input name="username" autocomplete="username" required></label><label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label><button>Inloggen</button></form></section>`));
+  if (method === 'POST' && pathname === '/login') { const body = await collect(req); const admin = getAdmin(); if (!admin || admin.username !== body.username || !verifyPassword(body.password || '', admin)) return send(res, layout('Login', '<section class="panel narrow"><h1>Beheerlogin</h1><p>Controleer je gegevens.</p><a href="/login">Opnieuw proberen</a></section>', { error: 'Inloggen mislukt.' }), 401); const sid = crypto.randomBytes(32).toString('hex'); sessions.set(sid, true); res.writeHead(302, { Location: '/admin', 'Set-Cookie': `hyper_session=${sid}.${sign(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}` }); return res.end(); }
+  if (method === 'POST' && pathname === '/logout') { res.writeHead(302, { Location: '/', 'Set-Cookie': 'hyper_session=; Path=/; Max-Age=0' }); return res.end(); }
+  if (method === 'GET' && pathname === '/admin') { if (requireAdmin(req,res)) return; return send(res, layout('Beheer', `<section class="panel"><h1>Nieuw verhaal toevoegen</h1><form method="post" action="/admin/posts" class="stack"><label>Titel<input name="title" required></label><label>Naam oorspronkelijke auteur<input name="author" required></label><label>Labels <small>komma-gescheiden</small><input name="labels" placeholder="ademhaling, duizeligheid, geruststelling"></label><label>Forumtekst<textarea name="body" rows="14" required></textarea></label><button>Opslaan</button></form></section>`, { admin: true })); }
+  if (method === 'POST' && pathname === '/admin/posts') { if (requireAdmin(req,res)) return; const body = await collect(req); const posts = allPosts(); const id = crypto.randomBytes(6).toString('base64url'); posts.push({ id, author: body.author, title: body.title, body: body.body, labels: parseLabels(body.labels), created_at: new Date().toISOString(), updated_at: new Date().toISOString() }); savePosts(posts); return redirect(res, `/posts/${id}`); }
+  if (method === 'GET' && pathname.startsWith('/admin/edit/')) { if (requireAdmin(req,res)) return; const id = decodeURIComponent(pathname.split('/').pop()); const p = allPosts().find(x=>x.id===id); if (!p) return send(res, 'Niet gevonden', 404); return send(res, layout('Bewerken', `<section class="panel"><h1>Verhaal bewerken</h1><form method="post" action="/admin/edit/${p.id}" class="stack"><label>Titel<input name="title" value="${escapeHtml(p.title)}" required></label><label>Naam oorspronkelijke auteur<input name="author" value="${escapeHtml(p.author)}" required></label><label>Labels<input name="labels" value="${escapeHtml((p.labels||[]).join(', '))}"></label><label>Forumtekst<textarea name="body" rows="14" required>${escapeHtml(p.body)}</textarea></label><button>Bijwerken</button></form></section>`, { admin: true })); }
+  if (method === 'POST' && pathname.startsWith('/admin/edit/')) { if (requireAdmin(req,res)) return; const id = decodeURIComponent(pathname.split('/').pop()); const body = await collect(req); const posts = allPosts(); const p = posts.find(x=>x.id===id); if (!p) return send(res, 'Niet gevonden', 404); Object.assign(p, { author: body.author, title: body.title, body: body.body, labels: parseLabels(body.labels), updated_at: new Date().toISOString() }); savePosts(posts); return redirect(res, `/posts/${id}`); }
+  send(res, 'Niet gevonden', 404);
+}
+
+const server = http.createServer(handler);
+if (require.main === module) server.listen(process.env.PORT || 8080, '0.0.0.0', () => console.log('Hyper draait.'));
+module.exports = { server, handler };
