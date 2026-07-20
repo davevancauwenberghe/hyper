@@ -1,0 +1,15 @@
+{
+  "name": "hyper",
+  "version": "1.0.0",
+  "description": "Een rustige encyclopedie met herkenbare verhalen rond hyperventilatie, stress en zenuwstelselontregeling.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "create-admin": "node scripts/create-admin.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {},
+  "devDependencies": {}
+}
