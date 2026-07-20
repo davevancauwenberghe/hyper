@@ -53,3 +53,58 @@ test('admin can add a beheer reply to a post', async () => {
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('admin can edit and delete a beheer reply', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyper-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.saveAdmin('beheerder', 'een-veilig-wachtwoord');
+  store.savePosts([{
+    id: 'post-1',
+    author: 'Originele naam',
+    title: 'Titel',
+    body: 'Tekst',
+    labels: [],
+    replies: [{ id: 'reply-1', originalReplier: 'Originele naam', author: 'Beheerder', body: 'Eerste reactie.' }],
+  }]);
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const login = await fetch(`${base}/login`, {
+      method: 'POST',
+      body: new URLSearchParams({ username: 'beheerder', password: 'een-veilig-wachtwoord' }),
+      redirect: 'manual',
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const edit = await fetch(`${base}/admin/reply/post-1/reply-1/edit`, {
+      method: 'POST',
+      headers: { cookie },
+      body: new URLSearchParams({ originalReplier: 'Aangepaste naam', author: 'Moderator', body: 'Bijgewerkte reactie.' }),
+      redirect: 'manual',
+    });
+
+    assert.equal(edit.status, 302);
+    assert.equal(edit.headers.get('location'), '/posts/post-1');
+    assert.deepEqual(store.allPosts()[0].replies.map(({ originalReplier, author, body }) => ({ originalReplier, author, body })), [
+      { originalReplier: 'Aangepaste naam', author: 'Moderator', body: 'Bijgewerkte reactie.' },
+    ]);
+
+    const remove = await fetch(`${base}/admin/reply/post-1/reply-1/delete`, {
+      method: 'POST',
+      headers: { cookie },
+      redirect: 'manual',
+    });
+
+    assert.equal(remove.status, 302);
+    assert.equal(remove.headers.get('location'), '/posts/post-1');
+    assert.deepEqual(store.allPosts()[0].replies, []);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
