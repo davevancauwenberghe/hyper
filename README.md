@@ -17,7 +17,7 @@ Open daarna `http://localhost:8080` en ga naar `/login`.
 1. Kies één beheerderaccount; alleen ingelogde beheerders kunnen verhalen toevoegen of bewerken.
 2. Gebruik een uniek wachtwoord van minimaal 16 tekens, bij voorkeur uit een wachtwoordmanager.
 3. Het wachtwoord wordt nooit plaintext opgeslagen: `scripts/create-admin.js` hasht het met PBKDF2-SHA256 met 310.000 iteraties voordat het in de data-mount komt.
-4. Bewaar `SESSION_SECRET` als Fly secret en hergebruik dezelfde waarde tussen deploys, anders worden sessies ongeldig.
+4. Bewaar `SESSION_SECRET` als Fly secret en hergebruik dezelfde waarde tussen deploys, anders worden sessies ongeldig. Als deze secret ontbreekt start de app met een tijdelijke secret zodat Fly-healthchecks niet falen, maar bestaande adminsessies vervallen bij iedere restart.
 5. Zet secrets op Fly:
 
 ```bash

@@ -3,8 +3,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { allPosts, savePosts, getAdmin, verifyPassword } = require('./store');
-const sessionSecret = process.env.SESSION_SECRET;
-if (!sessionSecret || sessionSecret.length < 32) throw new Error('SESSION_SECRET must be set and at least 32 characters long.');
+const sessionSecret = getSessionSecret();
+
+function getSessionSecret() {
+  const configuredSecret = process.env.SESSION_SECRET;
+  if (configuredSecret && configuredSecret.length >= 32) return configuredSecret;
+
+  const generatedSecret = crypto.randomBytes(48).toString('base64url');
+  const reason = configuredSecret
+    ? 'SESSION_SECRET is shorter than 32 characters'
+    : 'SESSION_SECRET is not set';
+  console.warn(`${reason}; using an ephemeral session secret. Set SESSION_SECRET to keep admin sessions valid across restarts.`);
+  return generatedSecret;
+}
 const sessions = new Map();
 
 const layout = (title, content, { admin = false, error = '', notice = '' } = {}) => `<!doctype html>
@@ -86,5 +97,9 @@ async function handler(req, res) {
 }
 
 const server = http.createServer(handler);
-if (require.main === module) server.listen(process.env.PORT || 8080, '0.0.0.0', () => console.log('Hyper draait.'));
+if (require.main === module) {
+  const host = process.env.HOST || '0.0.0.0';
+  const port = process.env.PORT || 8080;
+  server.listen(port, host, () => console.log(`Hyper draait op http://${host}:${port}.`));
+}
 module.exports = { server, handler };
