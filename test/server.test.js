@@ -16,7 +16,7 @@ test('server module loads without a configured session secret', () => {
   assert.match(result.stderr, /using an ephemeral session secret/);
 });
 
-test('admin can add a beheer reply to a post', async () => {
+test('admin can add a reply to a post', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyper-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
@@ -54,7 +54,38 @@ test('admin can add a beheer reply to a post', async () => {
   }
 });
 
-test('admin can edit and delete a beheer reply', async () => {
+test('homepage search includes replies', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyper-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.savePosts([{
+    id: 'post-1',
+    author: 'Originele naam',
+    title: 'Titel zonder zoekwoord',
+    body: 'Tekst zonder zoekwoord',
+    labels: [],
+    replies: [{ id: 'reply-1', originalReplier: 'Originele naam', author: 'Beheerder', body: 'Kalmerend antwoord over kaakspanning.' }],
+  }]);
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const response = await fetch(`${base}/?q=kaakspanning`);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /Titel zonder zoekwoord/);
+    assert.doesNotMatch(html, /Nog geen verhalen gevonden/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('admin can edit and delete a reply', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyper-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
