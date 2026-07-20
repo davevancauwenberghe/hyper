@@ -52,3 +52,7 @@ fly deploy
 ```
 
 De posts worden opgeslagen in `/data/hyper-posts.json`, dus ze blijven behouden tussen deploys zolang het volume bestaat.
+
+## Fly luisteradres
+
+Fly verwacht dat de Node-server op `0.0.0.0:8080` luistert. De startcode in `src/server.js` gebruikt daarom `process.env.PORT || 8080` en bindt aan `process.env.HOST || '0.0.0.0'`, zodat de Fly Proxy de app kan bereiken.
