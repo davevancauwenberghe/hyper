@@ -1,31 +1,36 @@
-app = "hyper"
-primary_region = "ams"
+# fly.toml app configuration file generated for hyper on 2026-07-20T12:40:35Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'hyper'
+primary_region = 'ams'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
+
+[[mounts]]
+  source = 'hyper_data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 1
 
   [http_service.concurrency]
-    type = "requests"
-    soft_limit = 200
+    type = 'requests'
     hard_limit = 250
-
-[[statics]]
-  guest_path = "/app/public"
-  url_prefix = "/"
+    soft_limit = 200
 
 [[vm]]
-  memory = "256mb"
-  cpu_kind = "shared"
+  memory = '256mb'
+  cpu_kind = 'shared'
   cpus = 1
   memory_mb = 256
 
-[mounts]
-  source = "hyper_data"
-  destination = "/data"
+[[statics]]
+  guest_path = '/app/public'
+  url_prefix = '/'
