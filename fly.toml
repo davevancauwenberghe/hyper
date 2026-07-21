@@ -1,16 +1,16 @@
-# fly.toml app configuration file generated for hyperpedia on 2026-07-20T12:40:35Z
+# fly.toml app configuration file generated for hyper on 2026-07-20T12:40:35Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'hyperpedia'
+app = 'hyper'
 primary_region = 'ams'
 
 [build]
   dockerfile = 'Dockerfile'
 
 [[mounts]]
-  source = 'hyperpedia_data'
+  source = 'hyper_data'
   destination = '/data'
 
 [http_service]
