@@ -9,5 +9,5 @@ if (!username || !password || password.length < 12) {
 
 const dataDir = process.env.DATA_DIR || '/data';
 saveAdmin(username, password);
-console.log(`Admin opgeslagen in ${path.join(dataDir, 'hyper-admin.json')}.`);
+console.log(`Admin opgeslagen in ${path.join(dataDir, 'hyperpedia-admin.json')}.`);
 console.log('Het wachtwoord staat alleen als PBKDF2-SHA256-hash in de data-mount.');

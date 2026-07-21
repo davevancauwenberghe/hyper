@@ -2,7 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { allPosts, savePosts, getAdmin, verifyPassword } = require('./store');
+const { allPosts, savePosts, recordPostRead, getStats, getAdmin, verifyPassword } = require('./store');
 const sessionSecret = getSessionSecret();
 
 function getSessionSecret() {
@@ -23,13 +23,13 @@ const layout = (title, content, { admin = false, error = '', notice = '' } = {})
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Hyper verzamelt herkenbare verhalen over hyperventilatie, stress en lichamelijke sensaties.">
-  <title>${escapeHtml(title)} · Hyper</title>
+  <meta name="description" content="Hyperpedia verzamelt herkenbare verhalen over hyperventilatie, stress en lichamelijke sensaties.">
+  <title>${escapeHtml(title)} · Hyperpedia</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="/"><span>Hyper</span><small>verhalen die geruststellen</small></a>
+    <a class="brand" href="/"><span>Hyperpedia</span><small>verhalen die geruststellen</small></a>
     <nav>
       ${admin ? '<a href="/admin">Beheer</a><form method="post" action="/logout"><button>Uitloggen</button></form>' : '<a href="/login">Login</a>'}
       <button class="theme-toggle" type="button" aria-label="Wissel licht/donker">☾</button>
@@ -40,7 +40,7 @@ const layout = (title, content, { admin = false, error = '', notice = '' } = {})
     ${notice ? `<p class="flash notice">${escapeHtml(notice)}</p>` : ''}
     ${content}
   </main>
-  <footer class="site-footer"><p>Hyper is op geen enkele manier medisch bewezen of medisch gevalideerd. Controleer nieuwe of aanhoudende klachten altijd bij je zorgverlener om zeker te weten wat er speelt.</p></footer>
+  <footer class="site-footer"><p>Hyperpedia is op geen enkele manier medisch bewezen of medisch gevalideerd. Controleer nieuwe of aanhoudende klachten altijd bij je zorgverlener om zeker te weten wat er speelt.</p></footer>
   <script src="/app.js"></script>
 </body>
 </html>`;
@@ -66,12 +66,18 @@ function renderReplies(post, { admin = false } = {}) {
 
   return `<section class="replies" aria-labelledby="replies-title"><h2 id="replies-title">Reacties</h2>${replies.map(reply => `<article class="reply"><p class="eyebrow">Reactie op ${escapeHtml(reply.originalReplier || post.author)}</p><h3>${escapeHtml(reply.author || 'Beheerder')}</h3><div>${escapeHtml(reply.body).replace(/\n/g, '<br>')}</div>${admin ? `<div class="reply-actions"><a class="button secondary" href="/admin/reply/${post.id}/${reply.id}/edit">Reactie bewerken</a><form method="post" action="/admin/reply/${post.id}/${reply.id}/delete"><button class="danger" type="submit">Reactie verwijderen</button></form></div>` : ''}</article>`).join('')}</section>`;
 }
+
+function formatNumber(value) { return new Intl.NumberFormat('nl-NL').format(value); }
+function adminDashboard() {
+  const stats = getStats();
+  return `<section class="admin-overview"><div><p class="eyebrow">Beheerder portal</p><h1>Overzicht</h1><p>Volg in één oogopslag hoeveel verhalen zijn ingevoerd, gelezen en beantwoord.</p></div><div class="stats-grid"><article><span>${formatNumber(stats.readCount)}</span><p>Totaal gelezen posts</p></article><article><span>${formatNumber(stats.postCount)}</span><p>Ingevoerde posts</p></article><article><span>${formatNumber(stats.replyCount)}</span><p>Beheerreacties</p></article></div></section>`;
+}
 function adminReplyForm(post) {
   return `<section class="panel reply-panel"><h2>Reactie toevoegen</h2><form method="post" action="/admin/reply/${post.id}" class="stack"><label>Naam originele replier<input name="originalReplier" value="${escapeHtml(post.author)}" required></label><label>Naam beheerder<input name="author" value="Beheerder" required></label><label>Reactie<textarea name="body" rows="6" required placeholder="Schrijf hier je reactie…"></textarea></label><button>Reactie opslaan</button></form></section>`;
 }
 function withRequest(req) {
   const cookies = parseCookies(req.headers.cookie);
-  const [sid, sig] = String(cookies.hyper_session || '').split('.');
+  const [sid, sig] = String(cookies.hyperpedia_session || '').split('.');
   req.admin = Boolean(sid && sig === sign(sid) && sessions.get(sid));
   req.urlObj = new URL(req.url, 'http://localhost');
 }
@@ -95,14 +101,14 @@ async function handler(req, res) {
     return send(res, layout('Start', `<section class="hero"><div><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van lichamelijke stresssignalen.</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${posts.length ? posts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>`, { admin: isAdmin(req) }));
   }
   if (method === 'GET' && pathname.startsWith('/posts/')) {
-    const id = decodeURIComponent(pathname.split('/').pop()); const post = allPosts().find(p => p.id === id);
+    const id = decodeURIComponent(pathname.split('/').pop()); const post = recordPostRead(id);
     if (!post) return send(res, layout('Niet gevonden', '<p class="empty">Dit verhaal bestaat niet.</p>', { admin: isAdmin(req) }), 404);
     return send(res, layout(post.title, `<article class="story"><a href="/">← terug</a><p class="eyebrow">${escapeHtml(post.author)}</p><h1>${escapeHtml(post.title)}</h1><div class="labels">${(post.labels||[]).map(l=>`<span class="label">${escapeHtml(l)}</span>`).join('')}</div><div class="body">${escapeHtml(post.body).replace(/\n/g, '<br>')}</div>${renderReplies(post, { admin: isAdmin(req) })}${isAdmin(req) ? `<p><a class="button" href="/admin/edit/${post.id}">Bewerken</a></p>${adminReplyForm(post)}` : ''}</article>`, { admin: isAdmin(req) }));
   }
-  if (method === 'GET' && pathname === '/login') return send(res, layout('Login', `<section class="panel narrow"><h1>Beheerlogin</h1><form method="post" action="/login" class="stack"><label>Gebruikersnaam<input name="username" autocomplete="username" required></label><label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label><button>Inloggen</button></form></section>`));
-  if (method === 'POST' && pathname === '/login') { const body = await collect(req); const admin = getAdmin(); if (!admin || admin.username !== body.username || !verifyPassword(body.password || '', admin)) return send(res, layout('Login', '<section class="panel narrow"><h1>Beheerlogin</h1><p>Controleer je gegevens.</p><a href="/login">Opnieuw proberen</a></section>', { error: 'Inloggen mislukt.' }), 401); const sid = crypto.randomBytes(32).toString('hex'); sessions.set(sid, true); res.writeHead(302, { Location: '/admin', 'Set-Cookie': `hyper_session=${sid}.${sign(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}` }); return res.end(); }
-  if (method === 'POST' && pathname === '/logout') { res.writeHead(302, { Location: '/', 'Set-Cookie': 'hyper_session=; Path=/; Max-Age=0' }); return res.end(); }
-  if (method === 'GET' && pathname === '/admin') { if (requireAdmin(req,res)) return; return send(res, layout('Beheer', `<section class="panel"><h1>Nieuw verhaal toevoegen</h1><form method="post" action="/admin/posts" class="stack"><label>Titel<input name="title" required></label><label>Naam oorspronkelijke auteur<input name="author" required></label><label>Labels <small>komma-gescheiden</small><input name="labels" placeholder="ademhaling, duizeligheid, geruststelling"></label><label>Forumtekst<textarea name="body" rows="14" required></textarea></label><button>Opslaan</button></form></section>`, { admin: true })); }
+  if (method === 'GET' && pathname === '/login') return send(res, layout('Login', `<section class="login-shell"><div class="login-card"><p class="eyebrow">Hyperpedia beheer</p><h1>Welkom terug</h1><p class="login-intro">Log veilig in om verhalen te bewaren, reacties te verzorgen en de encyclopedie rustig actueel te houden.</p><form method="post" action="/login" class="stack"><label>Gebruikersnaam<input name="username" autocomplete="username" required placeholder="beheerder"></label><label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required placeholder="••••••••••••"></label><button>Inloggen</button></form></div><aside class="login-aside"><span>✦</span><h2>Rustig beheer</h2><p>Een zachte, consistente werkplek die past bij de leeservaring van bezoekers.</p></aside></section>`));
+  if (method === 'POST' && pathname === '/login') { const body = await collect(req); const admin = getAdmin(); if (!admin || admin.username !== body.username || !verifyPassword(body.password || '', admin)) return send(res, layout('Login', '<section class="panel narrow"><h1>Beheerlogin</h1><p>Controleer je gegevens.</p><a href="/login">Opnieuw proberen</a></section>', { error: 'Inloggen mislukt.' }), 401); const sid = crypto.randomBytes(32).toString('hex'); sessions.set(sid, true); res.writeHead(302, { Location: '/admin', 'Set-Cookie': `hyperpedia_session=${sid}.${sign(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}` }); return res.end(); }
+  if (method === 'POST' && pathname === '/logout') { res.writeHead(302, { Location: '/', 'Set-Cookie': 'hyperpedia_session=; Path=/; Max-Age=0' }); return res.end(); }
+  if (method === 'GET' && pathname === '/admin') { if (requireAdmin(req,res)) return; return send(res, layout('Beheer', `${adminDashboard()}<section class="panel"><h1>Nieuw verhaal toevoegen</h1><form method="post" action="/admin/posts" class="stack"><label>Titel<input name="title" required></label><label>Naam oorspronkelijke auteur<input name="author" required></label><label>Labels <small>komma-gescheiden</small><input name="labels" placeholder="ademhaling, duizeligheid, geruststelling"></label><label>Forumtekst<textarea name="body" rows="14" required></textarea></label><button>Opslaan</button></form></section>`, { admin: true })); }
   if (method === 'POST' && pathname === '/admin/posts') { if (requireAdmin(req,res)) return; const body = await collect(req); const posts = allPosts(); const id = crypto.randomBytes(6).toString('base64url'); posts.push({ id, author: body.author, title: body.title, body: body.body, labels: parseLabels(body.labels), replies: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() }); savePosts(posts); return redirect(res, `/posts/${id}`); }
 
   if (method === 'GET' && pathname.startsWith('/admin/reply/') && pathname.endsWith('/edit')) {
