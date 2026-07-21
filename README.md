@@ -1,6 +1,6 @@
-# Hyper
+# Hyperpedia
 
-Hyper is een rustige Nederlandstalige encyclopedie met forumverhalen over hyperventilatie, vreemde lichamelijke sensaties, hyperarousal, stress en zenuwstelselontregeling.
+Hyperpedia is een rustige Nederlandstalige encyclopedie met forumverhalen over hyperventilatie, vreemde lichamelijke sensaties, hyperarousal, stress en zenuwstelselontregeling.
 
 ## Lokaal starten
 
@@ -24,34 +24,34 @@ Open daarna `http://localhost:8080` en ga naar `/login`.
 fly secrets set SESSION_SECRET="$(openssl rand -base64 48)"
 ```
 
-6. Maak na de eerste deploy een admin aan in de machine met de gemounte database. Gebruik hiervoor `fly ssh console`, niet je lokale `DATA_DIR=./data`, want Fly leest de admin uit `/data/hyper-admin.json` op het volume:
+6. Maak na de eerste deploy een admin aan in de machine met de gemounte database. Gebruik hiervoor `fly ssh console`, niet je lokale `DATA_DIR=./data`, want Fly leest de admin uit `/data/hyperpedia-admin.json` op het volume:
 
 ```bash
-fly ssh console -a hyper -C 'cd /app && node scripts/create-admin.js beheerder "een-heel-lang-uniek-wachtwoord"'
+fly ssh console -a hyperpedia -C 'cd /app && node scripts/create-admin.js beheerder "een-heel-lang-uniek-wachtwoord"'
 ```
 
 ### Login op productie herstellen
 
-Als je lokaal `DATA_DIR=./data npm run create-admin -- ...` hebt gedraaid en daarna deployt, staat de admin alleen op je Mac in `./data/hyper-admin.json`. Die lokale map wordt niet naar het Fly-volume gekopieerd. Herstel productie zo:
+Als je lokaal `DATA_DIR=./data npm run create-admin -- ...` hebt gedraaid en daarna deployt, staat de admin alleen op je Mac in `./data/hyperpedia-admin.json`. Die lokale map wordt niet naar het Fly-volume gekopieerd. Herstel productie zo:
 
 ```bash
-fly secrets set -a hyper SESSION_SECRET="$(openssl rand -base64 48)"
-fly deploy -a hyper
-fly ssh console -a hyper -C 'cd /app && node scripts/create-admin.js beheerder "een-heel-lang-uniek-wachtwoord"'
+fly secrets set -a hyperpedia SESSION_SECRET="$(openssl rand -base64 48)"
+fly deploy -a hyperpedia
+fly ssh console -a hyperpedia -C 'cd /app && node scripts/create-admin.js beheerder "een-heel-lang-uniek-wachtwoord"'
 ```
 
-Let op: verander `SESSION_SECRET` daarna niet meer bij iedere start of deploy. Een nieuwe secret maakt alleen bestaande sessiecookies ongeldig; het adminwachtwoord zelf staat los daarvan in `/data/hyper-admin.json`.
+Let op: verander `SESSION_SECRET` daarna niet meer bij iedere start of deploy. Een nieuwe secret maakt alleen bestaande sessiecookies ongeldig; het adminwachtwoord zelf staat los daarvan in `/data/hyperpedia-admin.json`.
 
 ## Deploy naar Fly.io
 
 Maak eerst het volume in dezelfde regio als `fly.toml`:
 
 ```bash
-fly volumes create hyper_data --region ams --size 1
+fly volumes create hyperpedia_data --region ams --size 1
 fly deploy
 ```
 
-De posts worden opgeslagen in `/data/hyper-posts.json`, dus ze blijven behouden tussen deploys zolang het volume bestaat.
+De posts worden opgeslagen in `/data/hyperpedia-posts.json`, dus ze blijven behouden tussen deploys zolang het volume bestaat.
 
 ## Fly luisteradres
 

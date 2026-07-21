@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 test('server module loads without a configured session secret', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyper-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   const result = spawnSync(process.execPath, ['-e', "delete process.env.SESSION_SECRET; process.env.DATA_DIR = process.argv[1]; require('./src/server');", dir], {
     cwd: path.join(__dirname, '..'),
     encoding: 'utf8',
@@ -17,7 +17,7 @@ test('server module loads without a configured session secret', () => {
 });
 
 test('admin can add a reply to a post', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyper-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
   delete require.cache[require.resolve('../src/store')];
@@ -55,7 +55,7 @@ test('admin can add a reply to a post', async () => {
 });
 
 test('homepage search includes replies', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyper-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
   delete require.cache[require.resolve('../src/store')];
@@ -86,7 +86,7 @@ test('homepage search includes replies', async () => {
 });
 
 test('admin can edit and delete a reply', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyper-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
   delete require.cache[require.resolve('../src/store')];
@@ -135,6 +135,43 @@ test('admin can edit and delete a reply', async () => {
     assert.equal(remove.status, 302);
     assert.equal(remove.headers.get('location'), '/posts/post-1');
     assert.deepEqual(store.allPosts()[0].replies, []);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('post reads are counted and surfaced in the admin overview', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.saveAdmin('beheerder', 'een-veilig-wachtwoord');
+  store.savePosts([{ id: 'post-1', author: 'Originele naam', title: 'Titel', body: 'Tekst', labels: [], replies: [] }]);
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await fetch(`${base}/posts/post-1`);
+    await fetch(`${base}/posts/post-1`);
+
+    const login = await fetch(`${base}/login`, {
+      method: 'POST',
+      body: new URLSearchParams({ username: 'beheerder', password: 'een-veilig-wachtwoord' }),
+      redirect: 'manual',
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const admin = await fetch(`${base}/admin`, { headers: { cookie } });
+    const html = await admin.text();
+
+    assert.equal(admin.status, 200);
+    assert.match(html, /Totaal gelezen posts/);
+    assert.match(html, /Ingevoerde posts/);
+    assert.match(html, /<span>2<\/span><p>Totaal gelezen posts/);
+    assert.match(html, /<span>1<\/span><p>Ingevoerde posts/);
+    assert.equal(store.allPosts()[0].read_count, 2);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
