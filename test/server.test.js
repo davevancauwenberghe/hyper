@@ -226,3 +226,43 @@ test('login page uses the landing page hero treatment', async () => {
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('homepage paginates forum posts in groups of sixteen', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.savePosts(Array.from({ length: 17 }, (_, index) => ({
+    id: `post-${String(index + 1).padStart(2, '0')}`,
+    author: 'Originele naam',
+    title: `Post ${String(index + 1).padStart(2, '0')}`,
+    body: 'Tekst',
+    labels: [],
+    replies: [],
+  })));
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const firstPage = await fetch(base);
+    const firstHtml = await firstPage.text();
+    const secondPage = await fetch(`${base}/?page=2`);
+    const secondHtml = await secondPage.text();
+
+    assert.equal(firstPage.status, 200);
+    assert.match(firstHtml, /Post 16/);
+    assert.doesNotMatch(firstHtml, /Post 17/);
+    assert.match(firstHtml, /Pagina 1 van 2/);
+    assert.match(firstHtml, /href="\/\?page=2"/);
+
+    assert.equal(secondPage.status, 200);
+    assert.doesNotMatch(secondHtml, /Post 16/);
+    assert.match(secondHtml, /Post 17/);
+    assert.match(secondHtml, /Pagina 2 van 2/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});

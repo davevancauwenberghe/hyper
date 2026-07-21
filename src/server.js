@@ -4,6 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { allPosts, savePosts, recordPostRead, getStats, getAdmin, verifyPassword } = require('./store');
 const sessionSecret = getSessionSecret();
+const POSTS_PER_PAGE = 16;
 
 function getSessionSecret() {
   const configuredSecret = process.env.SESSION_SECRET;
@@ -31,7 +32,7 @@ const layout = (title, content, { admin = false, error = '', notice = '' } = {})
   <header class="site-header">
     <a class="brand" href="/"><span>Hyperpedia</span><small>verhalen die geruststellen</small></a>
     <nav>
-      ${admin ? '<a href="/admin">Beheer</a><form method="post" action="/logout"><button>Uitloggen</button></form>' : '<a href="/login">Login</a>'}
+      ${admin ? '<a href="/admin">Beheer</a><form method="post" action="/logout"><button>Uitloggen</button></form>' : '<a class="nav-button" href="/login">Login</a>'}
       <button class="theme-toggle" type="button" aria-label="Wissel licht/donker">☾</button>
     </nav>
   </header>
@@ -60,6 +61,22 @@ function postCard(post) {
   const labels = post.labels || [];
   return `<article class="card"><div class="card-top"><p class="eyebrow">${escapeHtml(post.author)}</p>${labels.map(l => `<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div><h2><a href="/posts/${post.id}">${escapeHtml(post.title)}</a></h2><p>${escapeHtml(post.body).slice(0, 230)}${post.body.length > 230 ? '…' : ''}</p><div class="card-actions"><a class="button secondary" href="/posts/${post.id}" aria-label="Lees verder: ${escapeHtml(post.title)}">Lees verder</a>${(post.replies || []).length ? `<span class="reply-count">${post.replies.length} reactie${post.replies.length === 1 ? '' : 's'}</span>` : ''}</div></article>`;
 }
+
+function pageUrl({ q = '', label = '', page = 1 } = {}) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (label) params.set('label', label);
+  if (page > 1) params.set('page', String(page));
+  const query = params.toString();
+  return `/${query ? `?${query}` : ''}`;
+}
+function renderPagination({ q = '', label = '', page = 1, totalPages = 1, totalPosts = 0 } = {}) {
+  if (totalPages <= 1) return '';
+
+  const pages = Array.from({ length: totalPages }, (_, index) => index + 1);
+  return `<nav class="pagination" aria-label="Forum posts pagina's"><p>Pagina ${page} van ${totalPages} · ${formatNumber(totalPosts)} verhalen</p><div><a class="button secondary${page === 1 ? ' disabled' : ''}" href="${page === 1 ? '#' : pageUrl({ q, label, page: page - 1 })}" aria-label="Vorige pagina"${page === 1 ? ' aria-disabled="true" tabindex="-1"' : ''}>← Vorige</a>${pages.map(number => number === page ? `<span class="page-current" aria-current="page">${number}</span>` : `<a class="page-link" href="${pageUrl({ q, label, page: number })}">${number}</a>`).join('')}<a class="button secondary${page === totalPages ? ' disabled' : ''}" href="${page === totalPages ? '#' : pageUrl({ q, label, page: page + 1 })}" aria-label="Volgende pagina"${page === totalPages ? ' aria-disabled="true" tabindex="-1"' : ''}>Volgende →</a></div></nav>`;
+}
+
 function burnoutInsightCta() {
   return `<section class="external-forum-cta" aria-labelledby="burnout-insight-title"><div><p class="eyebrow">Nieuwe vragen stellen</p><h2 id="burnout-insight-title">Zoek je een actieve plek om verder te praten?</h2><p>Hyperpedia bewaart oudere forumverhalen als rustig archief. Wil je zelf anoniem delen, reageren op anderen of herkenning vinden bij mensen die nu hetzelfde meemaken? Bezoek dan het open burnout forum van Burnout Insight.</p></div><a class="button" href="https://www.burnoutinsight.com" target="_blank" rel="noopener noreferrer">Naar Burnout Insight</a></section>`;
 }
@@ -100,8 +117,14 @@ async function handler(req, res) {
       return `${p.title} ${p.author} ${p.body} ${(p.labels||[]).join(' ')} ${replyText}`.toLowerCase().includes(q.toLowerCase());
     });
     if (label) posts = posts.filter(p => (p.labels || []).includes(label));
+    const requestedPage = Number.parseInt(req.urlObj.searchParams.get('page') || '1', 10);
+    const totalPosts = posts.length;
+    const totalPages = Math.max(1, Math.ceil(totalPosts / POSTS_PER_PAGE));
+    const page = Math.min(Math.max(Number.isNaN(requestedPage) ? 1 : requestedPage, 1), totalPages);
+    const visiblePosts = posts.slice((page - 1) * POSTS_PER_PAGE, page * POSTS_PER_PAGE);
     const allLabels = [...new Set(allPosts().flatMap(p => p.labels || []))].sort((a,b)=>a.localeCompare(b,'nl'));
-    return send(res, layout('Start', `<section class="hero"><div><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van lichamelijke stresssignalen.</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${posts.length ? posts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>${burnoutInsightCta()}`, { admin: isAdmin(req) }));
+    const pagination = renderPagination({ q, label, page, totalPages, totalPosts });
+    return send(res, layout('Start', `<section class="hero"><div><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van lichamelijke stresssignalen.</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${visiblePosts.length ? visiblePosts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>${pagination}${burnoutInsightCta()}`, { admin: isAdmin(req) }));
   }
   if (method === 'GET' && pathname.startsWith('/posts/')) {
     const id = decodeURIComponent(pathname.split('/').pop()); const post = recordPostRead(id);
