@@ -176,3 +176,53 @@ test('post reads are counted and surfaced in the admin overview', async () => {
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+
+test('homepage cards and Burnout Insight CTA include explicit action links', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.savePosts([{ id: 'post-1', author: 'Originele naam', title: 'Titel', body: 'Tekst', labels: [], replies: [] }]);
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const response = await fetch(base);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /Lees verder/);
+    assert.match(html, /aria-label="Lees verder: Titel"/);
+    assert.match(html, /Nieuwe vragen stellen/);
+    assert.match(html, /https:\/\/www\.burnoutinsight\.com/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('login page uses the landing page hero treatment', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const response = await fetch(`${base}/login`);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /class="login-hero"/);
+    assert.match(html, /class="login-card stack"/);
+    assert.match(html, /Hyperpedia-archief aan te vullen/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
