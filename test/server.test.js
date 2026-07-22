@@ -267,7 +267,7 @@ test('homepage paginates forum posts in groups of sixteen', async () => {
   }
 });
 
-test('homepage renders four stories of the day using the Brussels system clock', async () => {
+test('homepage renders stories of the day as a carousel without date copy', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
@@ -292,9 +292,15 @@ test('homepage renders four stories of the day using the Brussels system clock',
 
     assert.equal(response.status, 200);
     assert.match(html, /class="daily-stories"/);
-    assert.match(html, /Verhalen van de dag · Europe\/Brussels/);
+    assert.match(html, /data-daily-stories/);
+    assert.doesNotMatch(html, /Europe\/Brussels/);
+    assert.doesNotMatch(html, /Dagelijkse herkenning/);
+    assert.doesNotMatch(html, /Deze vier verhalen wisselen automatisch/);
     const dailySection = html.match(/<section class="daily-stories"[\s\S]*?<section class="toolbar">/)[0];
+    assert.equal((dailySection.match(/class="daily-story-slide/g) || []).length, 4);
     assert.equal((dailySection.match(/<article class="card">/g) || []).length, 4);
+    assert.match(dailySection, /data-daily-prev/);
+    assert.match(dailySection, /data-daily-next/);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

@@ -90,10 +90,11 @@ function storiesOfTheDay(posts, date = new Date()) {
   const start = dayNumber(getBrusselsDateKey(date)) % ordered.length;
   return Array.from({ length: STORIES_OF_THE_DAY_COUNT }, (_, index) => ordered[(start + index) % ordered.length]);
 }
-function renderStoriesOfTheDay(posts, date = new Date()) {
+function renderStoriesOfTheDay(posts) {
   if (!posts.length) return '';
-  const brusselsDate = getBrusselsDateKey(date);
-  return `<section class="daily-stories" aria-labelledby="daily-stories-title"><div class="section-heading"><p class="eyebrow">Verhalen van de dag · ${escapeHtml(SITE_TIME_ZONE)}</p><h2 id="daily-stories-title">Dagelijkse herkenning</h2><p>Deze vier verhalen wisselen automatisch elke 24 uur op basis van de systeemklok (${escapeHtml(brusselsDate)} in Brussel).</p></div><div class="grid">${posts.map(postCard).join('')}</div></section>`;
+  const slides = posts.map((post, index) => `<div class="daily-story-slide${index === 0 ? ' is-active' : ''}" id="daily-story-${index + 1}" role="group" aria-roledescription="slide" aria-label="Verhaal ${index + 1} van ${posts.length}">${postCard(post)}</div>`).join('');
+  const dots = posts.map((_, index) => `<button type="button" class="daily-story-dot${index === 0 ? ' is-active' : ''}" aria-label="Toon verhaal ${index + 1}" aria-controls="daily-story-${index + 1}"${index === 0 ? ' aria-current="true"' : ''}></button>`).join('');
+  return `<section class="daily-stories" aria-labelledby="daily-stories-title" data-daily-stories><div class="section-heading"><p class="eyebrow">Verhalen van de dag</p><h2 id="daily-stories-title">Uitgelicht verhaal</h2></div><div class="daily-story-carousel"><button type="button" class="daily-story-nav" data-daily-prev aria-label="Vorig verhaal">←</button><div class="daily-story-track">${slides}</div><button type="button" class="daily-story-nav" data-daily-next aria-label="Volgend verhaal">→</button></div><div class="daily-story-dots" aria-label="Verhalen van de dag navigatie">${dots}</div></section>`;
 }
 function homepageStructuredData(posts, req) {
   const siteUrl = getSiteUrl(req);
