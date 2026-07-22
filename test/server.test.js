@@ -266,3 +266,69 @@ test('homepage paginates forum posts in groups of sixteen', async () => {
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('homepage renders four stories of the day using the Brussels system clock', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.savePosts(Array.from({ length: 6 }, (_, index) => ({
+    id: `post-${index + 1}`,
+    author: 'Originele naam',
+    title: `Dagverhaal ${index + 1}`,
+    body: 'Tekst',
+    labels: [],
+    replies: [],
+  })));
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const response = await fetch(base);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /class="daily-stories"/);
+    assert.match(html, /Verhalen van de dag · Europe\/Brussels/);
+    const dailySection = html.match(/<section class="daily-stories"[\s\S]*?<section class="toolbar">/)[0];
+    assert.equal((dailySection.match(/<article class="card">/g) || []).length, 4);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('public pages expose SEO metadata, structured data, robots, and sitemap URLs', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.savePosts([{ id: 'post-1', author: 'Originele naam', title: 'SEO titel', body: 'Een herkenbaar verhaal over hartkloppingen en stress.', labels: ['hartkloppingen'], replies: [] }]);
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const home = await fetch(base);
+    const homeHtml = await home.text();
+    const post = await fetch(`${base}/posts/post-1`);
+    const postHtml = await post.text();
+    const robots = await fetch(`${base}/robots.txt`);
+    const robotsText = await robots.text();
+    const sitemap = await fetch(`${base}/sitemap.xml`);
+    const sitemapXml = await sitemap.text();
+
+    assert.match(homeHtml, /<meta name="robots" content="index, follow">/);
+    assert.match(homeHtml, /<script type="application\/ld\+json">/);
+    assert.match(postHtml, /<meta property="og:type" content="article">/);
+    assert.match(postHtml, /DiscussionForumPosting/);
+    assert.match(robotsText, /Sitemap: http:\/\/127\.0\.0\.1:/);
+    assert.match(sitemapXml, /<loc>http:\/\/127\.0\.0\.1:[0-9]+\/posts\/post-1<\/loc>/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
