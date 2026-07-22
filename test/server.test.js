@@ -267,7 +267,7 @@ test('homepage paginates forum posts in groups of sixteen', async () => {
   }
 });
 
-test('homepage renders stories of the day as a carousel without date copy', async () => {
+test('homepage combines the hero and auto-rotating stories of the day carousel', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
@@ -291,8 +291,10 @@ test('homepage renders stories of the day as a carousel without date copy', asyn
     const html = await response.text();
 
     assert.equal(response.status, 200);
+    assert.match(html, /class="hero home-hero"/);
     assert.match(html, /class="daily-stories"/);
     assert.match(html, /data-daily-stories/);
+    assert.match(html, /De carrousel beweegt vanzelf/);
     assert.doesNotMatch(html, /Europe\/Brussels/);
     assert.doesNotMatch(html, /Dagelijkse herkenning/);
     assert.doesNotMatch(html, /Deze vier verhalen wisselen automatisch/);
@@ -300,8 +302,8 @@ test('homepage renders stories of the day as a carousel without date copy', asyn
     const dailySection = html.match(/<section class="daily-stories"[\s\S]*?<section class="toolbar">/)[0];
     assert.equal((dailySection.match(/class="daily-story-slide/g) || []).length, 4);
     assert.equal((dailySection.match(/<article class="card">/g) || []).length, 4);
-    assert.match(dailySection, /data-daily-prev/);
-    assert.match(dailySection, /data-daily-next/);
+    assert.doesNotMatch(dailySection, /data-daily-prev/);
+    assert.doesNotMatch(dailySection, /data-daily-next/);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

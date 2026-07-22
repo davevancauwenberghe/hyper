@@ -10,7 +10,10 @@ document.querySelector('.theme-toggle')?.addEventListener('click', () => {
 for (const carousel of document.querySelectorAll('[data-daily-stories]')) {
   const slides = [...carousel.querySelectorAll('.daily-story-slide')];
   const dots = [...carousel.querySelectorAll('.daily-story-dot')];
+  if (slides.length < 2) continue;
+
   let activeIndex = Math.max(0, slides.findIndex(slide => slide.classList.contains('is-active')));
+  let rotationTimer;
 
   const showStory = nextIndex => {
     activeIndex = (nextIndex + slides.length) % slides.length;
@@ -22,7 +25,25 @@ for (const carousel of document.querySelectorAll('[data-daily-stories]')) {
     });
   };
 
-  carousel.querySelector('[data-daily-prev]')?.addEventListener('click', () => showStory(activeIndex - 1));
-  carousel.querySelector('[data-daily-next]')?.addEventListener('click', () => showStory(activeIndex + 1));
-  dots.forEach((dot, index) => dot.addEventListener('click', () => showStory(index)));
+  const startRotation = () => {
+    window.clearInterval(rotationTimer);
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    rotationTimer = window.setInterval(() => showStory(activeIndex + 1), 5500);
+  };
+
+  const resetRotation = () => {
+    startRotation();
+  };
+
+  dots.forEach((dot, index) => dot.addEventListener('click', () => {
+    showStory(index);
+    resetRotation();
+  }));
+
+  carousel.addEventListener('mouseenter', () => window.clearInterval(rotationTimer));
+  carousel.addEventListener('mouseleave', startRotation);
+  carousel.addEventListener('focusin', () => window.clearInterval(rotationTimer));
+  carousel.addEventListener('focusout', startRotation);
+
+  startRotation();
 }
