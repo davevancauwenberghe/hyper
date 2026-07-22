@@ -5,6 +5,8 @@ const crypto = require('node:crypto');
 const { allPosts, savePosts, recordPostRead, getStats, getAdmin, verifyPassword } = require('./store');
 const sessionSecret = getSessionSecret();
 const POSTS_PER_PAGE = 16;
+const STORIES_OF_THE_DAY_COUNT = 4;
+const SITE_TIME_ZONE = 'Europe/Brussels';
 
 function getSessionSecret() {
   const configuredSecret = process.env.SESSION_SECRET;
@@ -19,14 +21,27 @@ function getSessionSecret() {
 }
 const sessions = new Map();
 
-const layout = (title, content, { admin = false, error = '', notice = '' } = {}) => `<!doctype html>
+const layout = (title, content, { admin = false, error = '', notice = '', description = 'Hyperpedia verzamelt herkenbare verhalen over hyperventilatie, stress en lichamelijke sensaties.', canonicalPath = '/', siteUrl = getSiteUrl(), type = 'website', structuredData = null } = {}) => {
+  const canonicalUrl = new URL(canonicalPath, siteUrl).toString();
+  const metaDescription = escapeHtml(description);
+  const safeTitle = escapeHtml(`${title} · Hyperpedia`);
+  return `<!doctype html>
 <html lang="nl" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Hyperpedia verzamelt herkenbare verhalen over hyperventilatie, stress en lichamelijke sensaties.">
-  <title>${escapeHtml(title)} · Hyperpedia</title>
+  <meta name="description" content="${metaDescription}">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
+  <meta property="og:site_name" content="Hyperpedia">
+  <meta property="og:title" content="${safeTitle}">
+  <meta property="og:description" content="${metaDescription}">
+  <meta property="og:type" content="${escapeHtml(type)}">
+  <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
+  <meta name="twitter:card" content="summary">
+  <title>${safeTitle}</title>
   <link rel="stylesheet" href="/style.css">
+  ${structuredData ? `<script type="application/ld+json">${JSON.stringify(structuredData).replace(/<\/script/gi, '<\\/script')}</script>` : ''}
 </head>
 <body>
   <header class="site-header">
@@ -45,6 +60,66 @@ const layout = (title, content, { admin = false, error = '', notice = '' } = {})
   <script src="/app.js"></script>
 </body>
 </html>`;
+};
+
+
+function getSiteUrl(req) {
+  const configured = process.env.SITE_URL;
+  if (configured) return configured.endsWith('/') ? configured : `${configured}/`;
+  if (!req) return 'http://localhost/';
+  const proto = req.headers['x-forwarded-proto'] || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  return `${proto}://${host}/`;
+}
+function requestPathWithQuery(req) {
+  return `${req.urlObj.pathname}${req.urlObj.search || ''}`;
+}
+function toSeoDescription(value, fallback) {
+  const compact = String(value || '').replace(/\s+/g, ' ').trim();
+  return compact ? `${compact.slice(0, 155)}${compact.length > 155 ? '…' : ''}` : fallback;
+}
+function getBrusselsDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: SITE_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+function dayNumber(dateKey) {
+  return Math.floor(Date.parse(`${dateKey}T00:00:00Z`) / 86400000);
+}
+function storiesOfTheDay(posts, date = new Date()) {
+  if (posts.length <= STORIES_OF_THE_DAY_COUNT) return posts;
+  const ordered = [...posts].sort((a, b) => String(a.id).localeCompare(String(b.id), 'nl'));
+  const start = dayNumber(getBrusselsDateKey(date)) % ordered.length;
+  return Array.from({ length: STORIES_OF_THE_DAY_COUNT }, (_, index) => ordered[(start + index) % ordered.length]);
+}
+function renderStoriesOfTheDay(posts, date = new Date()) {
+  if (!posts.length) return '';
+  const brusselsDate = getBrusselsDateKey(date);
+  return `<section class="daily-stories" aria-labelledby="daily-stories-title"><div class="section-heading"><p class="eyebrow">Verhalen van de dag · ${escapeHtml(SITE_TIME_ZONE)}</p><h2 id="daily-stories-title">Dagelijkse herkenning</h2><p>Deze vier verhalen wisselen automatisch elke 24 uur op basis van de systeemklok (${escapeHtml(brusselsDate)} in Brussel).</p></div><div class="grid">${posts.map(postCard).join('')}</div></section>`;
+}
+function homepageStructuredData(posts, req) {
+  const siteUrl = getSiteUrl(req);
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Hyperpedia',
+    url: siteUrl,
+    description: 'Een rustige encyclopedie met herkenbare forumverhalen over lichamelijke stresssignalen.',
+    potentialAction: { '@type': 'SearchAction', target: `${siteUrl}?q={search_term_string}`, 'query-input': 'required name=search_term_string' },
+    mainEntity: posts.slice(0, 12).map(post => ({ '@type': 'DiscussionForumPosting', headline: post.title, author: { '@type': 'Person', name: post.author }, url: new URL(`/posts/${encodeURIComponent(post.id)}`, siteUrl).toString() })),
+  };
+}
+function postStructuredData(post, req) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'DiscussionForumPosting',
+    headline: post.title,
+    text: post.body,
+    author: { '@type': 'Person', name: post.author },
+    datePublished: post.created_at || post.updated_at,
+    dateModified: post.updated_at || post.created_at,
+    keywords: (post.labels || []).join(', '),
+    url: new URL(`/posts/${encodeURIComponent(post.id)}`, getSiteUrl(req)).toString(),
+  };
+}
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -108,6 +183,12 @@ async function handler(req, res) {
   const pathname = req.urlObj.pathname;
   if (pathname === '/style.css') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'style.css')), 200, 'text/css');
   if (pathname === '/app.js') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js')), 200, 'application/javascript');
+  if (method === 'GET' && pathname === '/robots.txt') return send(res, `User-agent: *\nAllow: /\nSitemap: ${new URL('/sitemap.xml', getSiteUrl(req)).toString()}\n`, 200, 'text/plain; charset=utf-8');
+  if (method === 'GET' && pathname === '/sitemap.xml') {
+    const siteUrl = getSiteUrl(req);
+    const urls = ['/', ...allPosts().map(post => `/posts/${encodeURIComponent(post.id)}`)];
+    return send(res, `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map(url => `\n  <url><loc>${escapeHtml(new URL(url, siteUrl).toString())}</loc></url>`).join('')}\n</urlset>`, 200, 'application/xml; charset=utf-8');
+  }
   if (method === 'GET' && pathname === '/') {
     const q = (req.urlObj.searchParams.get('q') || '').trim();
     const label = (req.urlObj.searchParams.get('label') || '').trim();
@@ -124,12 +205,13 @@ async function handler(req, res) {
     const visiblePosts = posts.slice((page - 1) * POSTS_PER_PAGE, page * POSTS_PER_PAGE);
     const allLabels = [...new Set(allPosts().flatMap(p => p.labels || []))].sort((a,b)=>a.localeCompare(b,'nl'));
     const pagination = renderPagination({ q, label, page, totalPages, totalPosts });
-    return send(res, layout('Start', `<section class="hero"><div><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van lichamelijke stresssignalen.</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${visiblePosts.length ? visiblePosts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>${pagination}${burnoutInsightCta()}`, { admin: isAdmin(req) }));
+    const dailyStories = storiesOfTheDay(allPosts());
+    return send(res, layout('Start', `<section class="hero"><div><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van lichamelijke stresssignalen.</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div></section>${renderStoriesOfTheDay(dailyStories)}<section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${visiblePosts.length ? visiblePosts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>${pagination}${burnoutInsightCta()}`, { admin: isAdmin(req), canonicalPath: requestPathWithQuery(req), siteUrl: getSiteUrl(req), structuredData: homepageStructuredData(posts, req) }));
   }
   if (method === 'GET' && pathname.startsWith('/posts/')) {
     const id = decodeURIComponent(pathname.split('/').pop()); const post = recordPostRead(id);
     if (!post) return send(res, layout('Niet gevonden', '<p class="empty">Dit verhaal bestaat niet.</p>', { admin: isAdmin(req) }), 404);
-    return send(res, layout(post.title, `<article class="story"><a href="/">← terug</a><p class="eyebrow">${escapeHtml(post.author)}</p><h1>${escapeHtml(post.title)}</h1><div class="labels">${(post.labels||[]).map(l=>`<span class="label">${escapeHtml(l)}</span>`).join('')}</div><div class="body">${escapeHtml(post.body).replace(/\n/g, '<br>')}</div>${renderReplies(post, { admin: isAdmin(req) })}${isAdmin(req) ? `<p><a class="button" href="/admin/edit/${post.id}">Bewerken</a></p>${adminReplyForm(post)}` : ''}</article>`, { admin: isAdmin(req) }));
+    return send(res, layout(post.title, `<article class="story"><a href="/">← terug</a><p class="eyebrow">${escapeHtml(post.author)}</p><h1>${escapeHtml(post.title)}</h1><div class="labels">${(post.labels||[]).map(l=>`<span class="label">${escapeHtml(l)}</span>`).join('')}</div><div class="body">${escapeHtml(post.body).replace(/\n/g, '<br>')}</div>${renderReplies(post, { admin: isAdmin(req) })}${isAdmin(req) ? `<p><a class="button" href="/admin/edit/${post.id}">Bewerken</a></p>${adminReplyForm(post)}` : ''}</article>`, { admin: isAdmin(req), description: toSeoDescription(post.body, post.title), canonicalPath: `/posts/${encodeURIComponent(post.id)}`, type: 'article', siteUrl: getSiteUrl(req), structuredData: postStructuredData(post, req) }));
   }
   if (method === 'GET' && pathname === '/login') return send(res, layout('Login', `<section class="login-hero"><div><p class="eyebrow">Beheerder portal</p><h1>Beheerlogin</h1><p>Log in om het Hyperpedia-archief aan te vullen, verhalen bij te werken en reacties te beheren.</p></div><form method="post" action="/login" class="login-card stack"><label>Gebruikersnaam<input name="username" autocomplete="username" required></label><label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label><button>Inloggen</button></form></section>`));
   if (method === 'POST' && pathname === '/login') { const body = await collect(req); const admin = getAdmin(); if (!admin || admin.username !== body.username || !verifyPassword(body.password || '', admin)) return send(res, layout('Login', '<section class="panel narrow"><h1>Beheerlogin</h1><p>Controleer je gegevens.</p><a href="/login">Opnieuw proberen</a></section>', { error: 'Inloggen mislukt.' }), 401); const sid = crypto.randomBytes(32).toString('hex'); sessions.set(sid, true); res.writeHead(302, { Location: '/admin', 'Set-Cookie': `hyperpedia_session=${sid}.${sign(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}` }); return res.end(); }
