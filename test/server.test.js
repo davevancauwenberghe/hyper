@@ -296,6 +296,7 @@ test('homepage renders stories of the day as a carousel without date copy', asyn
     assert.doesNotMatch(html, /Europe\/Brussels/);
     assert.doesNotMatch(html, /Dagelijkse herkenning/);
     assert.doesNotMatch(html, /Deze vier verhalen wisselen automatisch/);
+    assert.doesNotMatch(html, /Uitgelicht verhaal/);
     const dailySection = html.match(/<section class="daily-stories"[\s\S]*?<section class="toolbar">/)[0];
     assert.equal((dailySection.match(/class="daily-story-slide/g) || []).length, 4);
     assert.equal((dailySection.match(/<article class="card">/g) || []).length, 4);
