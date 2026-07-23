@@ -96,3 +96,12 @@ textarea{resize:vertical}
 h1{font-size:2.4rem}
 .daily-story-track{min-height:28rem}
 }
+.metrics-panel{max-width:none}
+.metrics-panel .section-heading h2{margin:.2rem 0 .45rem}
+.read-metrics{list-style:none;margin:0;padding:0;display:grid;gap:.75rem}
+.read-metrics li{display:grid;grid-template-columns:minmax(0,1fr) minmax(8rem,.8fr) auto;gap:1rem;align-items:center;padding:.9rem 1rem;border:1px solid var(--line);border-radius:1rem;background:color-mix(in srgb,var(--paper) 94%,transparent)}
+.read-metrics a{font-weight:800;text-decoration:none}
+.read-metrics small{display:block;color:var(--muted);font:700 .78rem system-ui,sans-serif}
+.read-metrics strong{font:800 1.05rem system-ui,sans-serif;min-width:3ch;text-align:right}
+.read-metrics meter{width:100%;height:.8rem}
+@media(max-width:650px){.read-metrics li{grid-template-columns:1fr}.read-metrics strong{text-align:left}}

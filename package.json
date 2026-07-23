@@ -1,6 +1,6 @@
 {
   "name": "hyperpedia",
-  "version": "1.0.0",
+  "version": "1.0.0a",
   "description": "Een rustige encyclopedie met herkenbare verhalen rond hyperventilatie, stress en zenuwstelselontregeling.",
   "main": "src/server.js",
   "scripts": {
@@ -9,7 +9,9 @@
     "create-admin": "node scripts/create-admin.js",
     "test": "node --test"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {},
   "devDependencies": {}
 }

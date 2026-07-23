@@ -47,3 +47,23 @@ for (const carousel of document.querySelectorAll('[data-daily-stories]')) {
 
   startRotation();
 }
+
+
+const openedPost = document.querySelector('[data-post-id]');
+if (openedPost?.dataset.postId) {
+  const readUrl = `/posts/${encodeURIComponent(openedPost.dataset.postId)}/read`;
+  if (!navigator.sendBeacon?.(readUrl, new Blob([], { type: 'application/x-www-form-urlencoded' }))) {
+    fetch(readUrl, { method: 'POST', keepalive: true }).catch(() => {});
+  }
+}
+
+const dailyStories = document.querySelector('[data-daily-stories]');
+if (dailyStories) {
+  const scheduleMidnightRefresh = () => {
+    const now = new Date();
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 0, 0);
+    window.setTimeout(() => window.location.reload(), nextMidnight.getTime() - now.getTime() + 1000);
+  };
+  scheduleMidnightRefresh();
+}
