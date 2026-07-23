@@ -294,7 +294,9 @@ test('homepage combines the hero and auto-rotating stories of the day carousel',
     assert.match(html, /class="hero home-hero"/);
     assert.match(html, /class="daily-stories"/);
     assert.match(html, /data-daily-stories/);
-    assert.match(html, /De carrousel beweegt vanzelf/);
+    assert.match(html, /Een encyclopedie van stressignalen/);
+    assert.doesNotMatch(html, /Vier herkenbare ervaringen/);
+    assert.doesNotMatch(html, /De carrousel beweegt vanzelf/);
     assert.doesNotMatch(html, /Europe\/Brussels/);
     assert.doesNotMatch(html, /Dagelijkse herkenning/);
     assert.doesNotMatch(html, /Deze vier verhalen wisselen automatisch/);

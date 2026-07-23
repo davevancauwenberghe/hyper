@@ -81,8 +81,8 @@ textarea{resize:vertical}
 .section-heading h2{font-size:clamp(1.45rem,2.6vw,2rem);margin:.2rem 0 .45rem}
 .section-heading p{margin:0;color:var(--muted);max-width:58ch}
 .daily-story-frame{padding:clamp(.7rem,2vw,1.1rem);border:1px solid var(--line);border-radius:2rem;background:linear-gradient(135deg,color-mix(in srgb,var(--paper) 94%,transparent),color-mix(in srgb,var(--lav-2) 76%,var(--paper)));box-shadow:0 10px 28px rgba(71,55,80,.08)}
-.daily-story-track{position:relative;overflow:hidden;min-height:18rem;border-radius:1.4rem}
-.daily-story-slide{position:absolute;inset:0;opacity:0;transform:translateX(2rem) scale(.985);pointer-events:none;transition:opacity .28s ease,transform .28s ease}
+.daily-story-track{position:relative;overflow:hidden;min-height:24rem;border-radius:1.4rem}
+.daily-story-slide{position:absolute;inset:0;opacity:0;transform:translateX(1rem) scale(.995);pointer-events:none;transition:opacity .7s cubic-bezier(.22,1,.36,1),transform .7s cubic-bezier(.22,1,.36,1)}
 .daily-story-slide.is-active{opacity:1;transform:translateX(0) scale(1);pointer-events:auto}
 .daily-story-slide .card{height:100%;margin:0}
 .daily-story-dots{display:flex;justify-content:center;gap:.5rem;margin-top:.9rem}
@@ -94,5 +94,5 @@ textarea{resize:vertical}
 .external-forum-cta{align-items:flex-start;flex-direction:column}
 .external-forum-cta .button{white-space:normal}
 h1{font-size:2.4rem}
-.daily-story-track{min-height:22rem}
+.daily-story-track{min-height:28rem}
 }
