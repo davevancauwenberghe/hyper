@@ -17,7 +17,7 @@ test('admin passwords are hashed and verifiable', () => {
   assert.equal(store.verifyPassword('verkeerd', saved), false);
 });
 
-test('legacy read counts are reset for the 1.0.0b metrics version', () => {
+test('legacy embedded read counts are migrated into durable read metrics', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   delete require.cache[require.resolve('../src/store')];
@@ -26,7 +26,10 @@ test('legacy read counts are reset for the 1.0.0b metrics version', () => {
     posts: [{ id: 'post-1', author: 'Auteur', title: 'Titel', body: 'Tekst', read_count: 42 }],
   }));
 
-  assert.equal(store.allPosts()[0].read_count, 0);
+  assert.equal(store.getStats().readCount, 42);
   store.recordPostRead('post-1');
-  assert.equal(store.allPosts()[0].read_count, 1);
+  assert.equal(store.getStats().readCount, 43);
+  const metrics = JSON.parse(fs.readFileSync(path.join(dir, 'hyperpedia-read-metrics.json'), 'utf8'));
+  assert.equal(metrics.posts['post-1'].read_count, 43);
+  assert.equal(store.allPosts()[0].read_count, undefined);
 });
