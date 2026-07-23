@@ -348,3 +348,47 @@ test('public pages expose SEO metadata, structured data, robots, and sitemap URL
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('admin read metrics show only the top five titles without authors', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.saveAdmin('beheerder', 'een-veilig-wachtwoord');
+  store.savePosts(Array.from({ length: 6 }, (_, index) => ({
+    id: `post-${index + 1}`,
+    author: `Auteur ${index + 1}`,
+    title: `Top verhaal ${index + 1}`,
+    body: 'Tekst',
+    labels: [],
+    replies: [],
+    read_count: 6 - index,
+    read_metrics_version: '1.0.0b',
+  })));
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const login = await fetch(`${base}/login`, {
+      method: 'POST',
+      body: new URLSearchParams({ username: 'beheerder', password: 'een-veilig-wachtwoord' }),
+      redirect: 'manual',
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const admin = await fetch(`${base}/admin`, { headers: { cookie } });
+    const html = await admin.text();
+    const metricsSection = html.match(/<section class="panel metrics-panel">[\s\S]*?<\/section>/)[0];
+
+    assert.equal(admin.status, 200);
+    assert.equal((metricsSection.match(/<li>/g) || []).length, 5);
+    assert.match(metricsSection, /Top verhaal 1/);
+    assert.match(metricsSection, /Top verhaal 5/);
+    assert.doesNotMatch(metricsSection, /Top verhaal 6/);
+    assert.doesNotMatch(metricsSection, /Auteur 1/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});

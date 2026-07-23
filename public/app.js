@@ -67,3 +67,22 @@ if (dailyStories) {
   };
   scheduleMidnightRefresh();
 }
+
+
+const infoDialog = document.querySelector('[data-info-dialog]');
+const openInfoButtons = document.querySelectorAll('[data-info-open]');
+const closeInfoButtons = document.querySelectorAll('[data-info-close]');
+
+if (infoDialog) {
+  const openInfoDialog = () => {
+    if (typeof infoDialog.showModal === 'function') infoDialog.showModal();
+    else infoDialog.setAttribute('open', '');
+  };
+  const closeInfoDialog = () => infoDialog.close?.() || infoDialog.removeAttribute('open');
+
+  openInfoButtons.forEach(button => button.addEventListener('click', openInfoDialog));
+  closeInfoButtons.forEach(button => button.addEventListener('click', closeInfoDialog));
+  infoDialog.addEventListener('click', event => {
+    if (event.target === infoDialog) closeInfoDialog();
+  });
+}
