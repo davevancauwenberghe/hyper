@@ -176,7 +176,9 @@ test('post reads are counted only by explicit open tracking and surfaced in the 
     assert.match(html, /<span>2<\/span><p>Gelezen posts/);
     assert.match(html, /<span>1<\/span><p>Ingevoerde posts/);
     assert.match(html, /<meter min="0" max="2" value="2"><\/meter><strong>2<\/strong>/);
-    assert.equal(store.allPosts()[0].read_count, 2);
+    const metrics = JSON.parse(fs.readFileSync(path.join(dir, 'hyperpedia-read-metrics.json'), 'utf8'));
+    assert.equal(metrics.posts['post-1'].read_count, 2);
+    assert.equal(store.getStats().postReads[0].read_count, 2);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

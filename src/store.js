@@ -8,7 +8,7 @@ const storePath = path.join(dataDir, 'hyperpedia-posts.json');
 const legacyStorePath = path.join(dataDir, 'hyper-posts.json');
 const adminPath = path.join(dataDir, 'hyperpedia-admin.json');
 const legacyAdminPath = path.join(dataDir, 'hyper-admin.json');
-const READ_METRICS_VERSION = '1.0.0b';
+const readMetricsPath = path.join(dataDir, 'hyperpedia-read-metrics.json');
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -23,26 +23,46 @@ function readJsonWithLegacy(file, legacyFile, fallback) {
   return readJson(legacyFile, fallback);
 }
 function normalizePost(post) {
-  const readCount = post.read_metrics_version === READ_METRICS_VERSION ? Number(post.read_count || 0) : 0;
-  return { ...post, replies: post.replies || [], read_count: readCount, read_metrics_version: READ_METRICS_VERSION };
+  const { read_count, read_metrics_version, ...content } = post;
+  return { ...content, replies: content.replies || [] };
 }
 function allPosts() { return readJsonWithLegacy(storePath, legacyStorePath, { posts: [] }).posts.map(normalizePost); }
 function savePosts(posts) { writeJson(storePath, { posts: posts.map(normalizePost) }); }
+function getReadMetrics() {
+  const stored = readJson(readMetricsPath, { posts: {} });
+  return stored && typeof stored.posts === 'object' && stored.posts ? stored : { posts: {} };
+}
+function saveReadMetrics(metrics) { writeJson(readMetricsPath, { posts: metrics.posts || {} }); }
+function metricCount(metrics, id) { return Number(metrics.posts?.[id]?.read_count || 0); }
+function migrateEmbeddedReadCounts(posts, metrics) {
+  let changed = false;
+  for (const post of posts) {
+    const embeddedCount = Number(post.read_count || 0);
+    if (embeddedCount > metricCount(metrics, post.id)) {
+      metrics.posts[post.id] = { read_count: embeddedCount };
+      changed = true;
+    }
+  }
+  if (changed) saveReadMetrics(metrics);
+  return metrics;
+}
 function recordPostRead(id) {
-  const posts = allPosts();
-  const post = posts.find(item => item.id === id);
+  const rawPosts = readJsonWithLegacy(storePath, legacyStorePath, { posts: [] }).posts;
+  const post = rawPosts.find(item => item.id === id);
   if (!post) return null;
-  post.read_count = Number(post.read_count || 0) + 1;
-  post.updated_at = new Date().toISOString();
-  savePosts(posts);
-  return post;
+  const metrics = migrateEmbeddedReadCounts(rawPosts, getReadMetrics());
+  metrics.posts[id] = { read_count: metricCount(metrics, id) + 1 };
+  saveReadMetrics(metrics);
+  return { ...normalizePost(post), read_count: metrics.posts[id].read_count };
 }
 function getStats() {
-  const posts = allPosts();
+  const rawPosts = readJsonWithLegacy(storePath, legacyStorePath, { posts: [] }).posts;
+  const metrics = migrateEmbeddedReadCounts(rawPosts, getReadMetrics());
+  const posts = rawPosts.map(normalizePost);
   const replyCount = posts.reduce((total, post) => total + (post.replies || []).length, 0);
-  const readCount = posts.reduce((total, post) => total + Number(post.read_count || 0), 0);
+  const readCount = posts.reduce((total, post) => total + metricCount(metrics, post.id), 0);
   const postReads = posts
-    .map(post => ({ id: post.id, title: post.title, author: post.author, read_count: Number(post.read_count || 0) }))
+    .map(post => ({ id: post.id, title: post.title, author: post.author, read_count: metricCount(metrics, post.id) }))
     .sort((a, b) => b.read_count - a.read_count || String(a.title || '').localeCompare(String(b.title || ''), 'nl'));
   return { postCount: posts.length, readCount, replyCount, postReads };
 }

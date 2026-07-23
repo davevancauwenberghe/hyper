@@ -36,7 +36,7 @@ textarea{resize:vertical}
 .card>p{color:var(--muted)}
 .card-actions{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-top:auto}
 .card-actions .button{padding:.62rem .9rem;font-size:.84rem}
-.story{max-width:780px;margin:2rem auto;padding:clamp(1.5rem,4vw,3rem)}
+.story{max-width:none;margin:2rem auto;padding:clamp(1.5rem,4vw,3rem)}
 .story h1{font-size:clamp(2rem,5vw,3.4rem);max-width:18ch}
 .body{margin-top:2rem;font-size:1.11rem}
 .replies{margin-top:2rem;padding-top:1.5rem;border-top:1px solid var(--line)}
