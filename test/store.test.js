@@ -17,7 +17,7 @@ test('admin passwords are hashed and verifiable', () => {
   assert.equal(store.verifyPassword('verkeerd', saved), false);
 });
 
-test('legacy read counts are reset for the 1.0.0a metrics version', () => {
+test('legacy read counts are reset for the 1.0.0b metrics version', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   delete require.cache[require.resolve('../src/store')];

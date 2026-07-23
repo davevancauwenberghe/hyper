@@ -8,7 +8,7 @@ const storePath = path.join(dataDir, 'hyperpedia-posts.json');
 const legacyStorePath = path.join(dataDir, 'hyper-posts.json');
 const adminPath = path.join(dataDir, 'hyperpedia-admin.json');
 const legacyAdminPath = path.join(dataDir, 'hyper-admin.json');
-const READ_METRICS_VERSION = '1.0.0a';
+const READ_METRICS_VERSION = '1.0.0b';
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
