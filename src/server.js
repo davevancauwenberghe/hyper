@@ -6,7 +6,6 @@ const { allPosts, savePosts, recordPostRead, getStats, getAdmin, verifyPassword 
 const sessionSecret = getSessionSecret();
 const POSTS_PER_PAGE = 16;
 const STORIES_OF_THE_DAY_COUNT = 4;
-const SITE_TIME_ZONE = 'Europe/Brussels';
 
 function getSessionSecret() {
   const configuredSecret = process.env.SESSION_SECRET;
@@ -78,8 +77,11 @@ function toSeoDescription(value, fallback) {
   const compact = String(value || '').replace(/\s+/g, ' ').trim();
   return compact ? `${compact.slice(0, 155)}${compact.length > 155 ? '…' : ''}` : fallback;
 }
-function getBrusselsDateKey(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: SITE_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 function dayNumber(dateKey) {
   return Math.floor(Date.parse(`${dateKey}T00:00:00Z`) / 86400000);
@@ -87,7 +89,7 @@ function dayNumber(dateKey) {
 function storiesOfTheDay(posts, date = new Date()) {
   if (posts.length <= STORIES_OF_THE_DAY_COUNT) return posts;
   const ordered = [...posts].sort((a, b) => String(a.id).localeCompare(String(b.id), 'nl'));
-  const start = dayNumber(getBrusselsDateKey(date)) % ordered.length;
+  const start = dayNumber(getLocalDateKey(date)) % ordered.length;
   return Array.from({ length: STORIES_OF_THE_DAY_COUNT }, (_, index) => ordered[(start + index) % ordered.length]);
 }
 function renderStoriesOfTheDay(posts) {
@@ -166,7 +168,9 @@ function renderReplies(post, { admin = false } = {}) {
 function formatNumber(value) { return new Intl.NumberFormat('nl-NL').format(value); }
 function adminDashboard() {
   const stats = getStats();
-  return `<section class="admin-overview"><div><p class="eyebrow">Beheerder portal</p><h1>Overzicht</h1><p>Volg in één oogopslag hoeveel verhalen zijn ingevoerd, gelezen en beantwoord.</p></div><div class="stats-grid"><article><span>${formatNumber(stats.readCount)}</span><p>Totaal gelezen posts</p></article><article><span>${formatNumber(stats.postCount)}</span><p>Ingevoerde posts</p></article><article><span>${formatNumber(stats.replyCount)}</span><p>Beheerreacties</p></article></div></section>`;
+  const topReadCount = Math.max(1, ...stats.postReads.map(post => post.read_count));
+  const readRows = stats.postReads.map(post => `<li><div><a href="/posts/${encodeURIComponent(post.id)}">${escapeHtml(post.title)}</a><small>${escapeHtml(post.author || 'Onbekend')}</small></div><meter min="0" max="${topReadCount}" value="${post.read_count}"></meter><strong>${formatNumber(post.read_count)}</strong></li>`).join('');
+  return `<section class="admin-overview"><div><p class="eyebrow">Beheerder portal</p><h1>Overzicht</h1><p>Volg in één oogopslag hoeveel verhalen zijn ingevoerd, gelezen en beantwoord.</p></div><div class="stats-grid"><article><span>${formatNumber(stats.readCount)}</span><p>Gelezen posts</p></article><article><span>${formatNumber(stats.postCount)}</span><p>Ingevoerde posts</p></article><article><span>${formatNumber(stats.replyCount)}</span><p>Reacties</p></article></div></section><section class="panel metrics-panel"><div class="section-heading"><p class="eyebrow">Leesstatistieken</p><h2>Reads per post</h2><p>Een handig overzicht van hoe vaak elk verhaal echt is geopend.</p></div><ol class="read-metrics">${readRows || '<li class="empty">Nog geen verhalen om te meten.</li>'}</ol></section>`;
 }
 function adminReplyForm(post) {
   return `<section class="panel reply-panel"><h2>Reactie toevoegen</h2><form method="post" action="/admin/reply/${post.id}" class="stack"><label>Naam originele replier<input name="originalReplier" value="${escapeHtml(post.author)}" required></label><label>Naam beheerder<input name="author" value="Beheerder" required></label><label>Reactie<textarea name="body" rows="6" required placeholder="Schrijf hier je reactie…"></textarea></label><button>Reactie opslaan</button></form></section>`;
@@ -209,10 +213,16 @@ async function handler(req, res) {
     const dailyStories = storiesOfTheDay(allPosts());
     return send(res, layout('Start', `<section class="hero home-hero"><div class="hero-copy"><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van stressignalen</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div><section class="daily-stories" aria-labelledby="daily-stories-title"><div class="section-heading"><p class="eyebrow" id="daily-stories-title">Verhalen van de dag</p></div>${renderStoriesOfTheDay(dailyStories)}</section></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${visiblePosts.length ? visiblePosts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>${pagination}${burnoutInsightCta()}`, { admin: isAdmin(req), canonicalPath: requestPathWithQuery(req), siteUrl: getSiteUrl(req), structuredData: homepageStructuredData(posts, req) }));
   }
+  if (method === 'POST' && pathname.startsWith('/posts/') && pathname.endsWith('/read')) {
+    const parts = pathname.split('/');
+    const id = decodeURIComponent(parts[2] || '');
+    const post = recordPostRead(id);
+    return send(res, JSON.stringify({ ok: Boolean(post) }), post ? 200 : 404, 'application/json; charset=utf-8');
+  }
   if (method === 'GET' && pathname.startsWith('/posts/')) {
-    const id = decodeURIComponent(pathname.split('/').pop()); const post = recordPostRead(id);
+    const id = decodeURIComponent(pathname.split('/').pop()); const post = allPosts().find(item => item.id === id);
     if (!post) return send(res, layout('Niet gevonden', '<p class="empty">Dit verhaal bestaat niet.</p>', { admin: isAdmin(req) }), 404);
-    return send(res, layout(post.title, `<article class="story"><a href="/">← terug</a><p class="eyebrow">${escapeHtml(post.author)}</p><h1>${escapeHtml(post.title)}</h1><div class="labels">${(post.labels||[]).map(l=>`<span class="label">${escapeHtml(l)}</span>`).join('')}</div><div class="body">${escapeHtml(post.body).replace(/\n/g, '<br>')}</div>${renderReplies(post, { admin: isAdmin(req) })}${isAdmin(req) ? `<p><a class="button" href="/admin/edit/${post.id}">Bewerken</a></p>${adminReplyForm(post)}` : ''}</article>`, { admin: isAdmin(req), description: toSeoDescription(post.body, post.title), canonicalPath: `/posts/${encodeURIComponent(post.id)}`, type: 'article', siteUrl: getSiteUrl(req), structuredData: postStructuredData(post, req) }));
+    return send(res, layout(post.title, `<article class="story" data-post-id="${escapeHtml(post.id)}"><a href="/">← terug</a><p class="eyebrow">${escapeHtml(post.author)}</p><h1>${escapeHtml(post.title)}</h1><div class="labels">${(post.labels||[]).map(l=>`<span class="label">${escapeHtml(l)}</span>`).join('')}</div><div class="body">${escapeHtml(post.body).replace(/\n/g, '<br>')}</div>${renderReplies(post, { admin: isAdmin(req) })}${isAdmin(req) ? `<p><a class="button" href="/admin/edit/${post.id}">Bewerken</a></p>${adminReplyForm(post)}` : ''}</article>`, { admin: isAdmin(req), description: toSeoDescription(post.body, post.title), canonicalPath: `/posts/${encodeURIComponent(post.id)}`, type: 'article', siteUrl: getSiteUrl(req), structuredData: postStructuredData(post, req) }));
   }
   if (method === 'GET' && pathname === '/login') return send(res, layout('Login', `<section class="login-hero"><div><p class="eyebrow">Beheerder portal</p><h1>Beheerlogin</h1><p>Log in om het Hyperpedia-archief aan te vullen, verhalen bij te werken en reacties te beheren.</p></div><form method="post" action="/login" class="login-card stack"><label>Gebruikersnaam<input name="username" autocomplete="username" required></label><label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label><button>Inloggen</button></form></section>`));
   if (method === 'POST' && pathname === '/login') { const body = await collect(req); const admin = getAdmin(); if (!admin || admin.username !== body.username || !verifyPassword(body.password || '', admin)) return send(res, layout('Login', '<section class="panel narrow"><h1>Beheerlogin</h1><p>Controleer je gegevens.</p><a href="/login">Opnieuw proberen</a></section>', { error: 'Inloggen mislukt.' }), 401); const sid = crypto.randomBytes(32).toString('hex'); sessions.set(sid, true); res.writeHead(302, { Location: '/admin', 'Set-Cookie': `hyperpedia_session=${sid}.${sign(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}` }); return res.end(); }

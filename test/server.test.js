@@ -140,7 +140,7 @@ test('admin can edit and delete a reply', async () => {
   }
 });
 
-test('post reads are counted and surfaced in the admin overview', async () => {
+test('post reads are counted only by explicit open tracking and surfaced in the admin metrics overview', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
@@ -155,7 +155,8 @@ test('post reads are counted and surfaced in the admin overview', async () => {
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     await fetch(`${base}/posts/post-1`);
-    await fetch(`${base}/posts/post-1`);
+    await fetch(`${base}/posts/post-1/read`, { method: 'POST' });
+    await fetch(`${base}/posts/post-1/read`, { method: 'POST' });
 
     const login = await fetch(`${base}/login`, {
       method: 'POST',
@@ -167,10 +168,14 @@ test('post reads are counted and surfaced in the admin overview', async () => {
     const html = await admin.text();
 
     assert.equal(admin.status, 200);
-    assert.match(html, /Totaal gelezen posts/);
+    assert.match(html, /Gelezen posts/);
     assert.match(html, /Ingevoerde posts/);
-    assert.match(html, /<span>2<\/span><p>Totaal gelezen posts/);
+    assert.match(html, /Reacties/);
+    assert.match(html, /Leesstatistieken/);
+    assert.match(html, /Reads per post/);
+    assert.match(html, /<span>2<\/span><p>Gelezen posts/);
     assert.match(html, /<span>1<\/span><p>Ingevoerde posts/);
+    assert.match(html, /<meter min="0" max="2" value="2"><\/meter><strong>2<\/strong>/);
     assert.equal(store.allPosts()[0].read_count, 2);
   } finally {
     await new Promise(resolve => server.close(resolve));
