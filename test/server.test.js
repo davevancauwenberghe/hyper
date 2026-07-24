@@ -366,9 +366,10 @@ test('admin read metrics show only the top five titles without authors', async (
     body: 'Tekst',
     labels: [],
     replies: [],
-    read_count: 6 - index,
-    read_metrics_version: '1.0.0b',
   })));
+  for (let postIndex = 0; postIndex < 6; postIndex += 1) {
+    for (let readIndex = 0; readIndex < 6 - postIndex; readIndex += 1) store.recordPostRead(`post-${postIndex + 1}`);
+  }
   const { server } = require('../src/server');
 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

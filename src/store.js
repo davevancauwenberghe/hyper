@@ -33,12 +33,19 @@ function getReadMetrics() {
   return stored && typeof stored.posts === 'object' && stored.posts ? stored : { posts: {} };
 }
 function saveReadMetrics(metrics) { writeJson(readMetricsPath, { posts: metrics.posts || {} }); }
+function purgePostRead(id) {
+  const metrics = getReadMetrics();
+  const existed = Object.prototype.hasOwnProperty.call(metrics.posts || {}, id);
+  metrics.posts[id] = { read_count: 0, purged_at: new Date().toISOString() };
+  saveReadMetrics(metrics);
+  return existed;
+}
 function metricCount(metrics, id) { return Number(metrics.posts?.[id]?.read_count || 0); }
 function migrateEmbeddedReadCounts(posts, metrics) {
   let changed = false;
   for (const post of posts) {
     const embeddedCount = Number(post.read_count || 0);
-    if (embeddedCount > metricCount(metrics, post.id)) {
+    if (!Object.prototype.hasOwnProperty.call(metrics.posts || {}, post.id) && embeddedCount > 0) {
       metrics.posts[post.id] = { read_count: embeddedCount };
       changed = true;
     }
@@ -63,6 +70,7 @@ function getStats() {
   const readCount = posts.reduce((total, post) => total + metricCount(metrics, post.id), 0);
   const postReads = posts
     .map(post => ({ id: post.id, title: post.title, author: post.author, read_count: metricCount(metrics, post.id) }))
+    .filter(post => post.read_count > 0)
     .sort((a, b) => b.read_count - a.read_count || String(a.title || '').localeCompare(String(b.title || ''), 'nl'));
   return { postCount: posts.length, readCount, replyCount, postReads };
 }
@@ -78,4 +86,4 @@ function verifyPassword(password, admin) {
   const hash = crypto.pbkdf2Sync(password, admin.salt, admin.iterations, 32, 'sha256');
   return crypto.timingSafeEqual(hash, Buffer.from(admin.hash, 'hex'));
 }
-module.exports = { allPosts, savePosts, recordPostRead, getStats, getAdmin, saveAdmin, verifyPassword };
+module.exports = { allPosts, savePosts, recordPostRead, purgePostRead, getStats, getAdmin, saveAdmin, verifyPassword };
