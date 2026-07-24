@@ -2,7 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { allPosts, savePosts, recordPostRead, getStats, getAdmin, verifyPassword } = require('./store');
+const { allPosts, savePosts, recordPostRead, purgePostRead, getStats, getAdmin, verifyPassword } = require('./store');
 const sessionSecret = getSessionSecret();
 const POSTS_PER_PAGE = 16;
 const STORIES_OF_THE_DAY_COUNT = 4;
@@ -87,6 +87,10 @@ function toSeoDescription(value, fallback) {
   const compact = String(value || '').replace(/\s+/g, ' ').trim();
   return compact ? `${compact.slice(0, 155)}${compact.length > 155 ? '…' : ''}` : fallback;
 }
+function toIsoDate(value) {
+  const date = value ? new Date(value) : new Date(0);
+  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
+}
 function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -108,6 +112,9 @@ function renderStoriesOfTheDay(posts) {
   const dots = posts.map((_, index) => `<button type="button" class="daily-story-dot${index === 0 ? ' is-active' : ''}" aria-label="Toon verhaal ${index + 1}" aria-controls="daily-story-${index + 1}"${index === 0 ? ' aria-current="true"' : ''}></button>`).join('');
   return `<div class="daily-story-frame" data-daily-stories><div class="daily-story-track" aria-live="polite">${slides}</div><div class="daily-story-dots" aria-label="Verhalen van de dag navigatie">${dots}</div></div>`;
 }
+function personStructuredData(name, url) {
+  return { '@type': 'Person', name, url };
+}
 function homepageStructuredData(posts, req) {
   const siteUrl = getSiteUrl(req);
   return {
@@ -117,23 +124,28 @@ function homepageStructuredData(posts, req) {
     url: siteUrl,
     description: 'Een rustige encyclopedie met herkenbare forumverhalen over lichamelijke stresssignalen.',
     potentialAction: { '@type': 'SearchAction', target: `${siteUrl}?q={search_term_string}`, 'query-input': 'required name=search_term_string' },
-    mainEntity: posts.slice(0, 12).map(post => ({ '@type': 'DiscussionForumPosting', headline: post.title, author: { '@type': 'Person', name: post.author }, url: new URL(`/posts/${encodeURIComponent(post.id)}`, siteUrl).toString() })),
+    mainEntity: posts.slice(0, 12).map(post => {
+      const url = new URL(`/posts/${encodeURIComponent(post.id)}`, siteUrl).toString();
+      return { '@type': 'DiscussionForumPosting', headline: post.title, datePublished: toIsoDate(post.created_at || post.updated_at), author: personStructuredData(post.author, url), url };
+    }),
   };
 }
 function postStructuredData(post, req) {
+  const siteUrl = getSiteUrl(req);
   return {
     '@context': 'https://schema.org',
     '@type': 'DiscussionForumPosting',
     headline: post.title,
     text: post.body,
-    author: { '@type': 'Person', name: post.author },
-    datePublished: post.created_at || post.updated_at,
-    dateModified: post.updated_at || post.created_at,
+    author: personStructuredData(post.author, new URL(`/posts/${encodeURIComponent(post.id)}`, siteUrl).toString()),
+    datePublished: toIsoDate(post.created_at || post.updated_at),
+    dateModified: toIsoDate(post.updated_at || post.created_at),
     keywords: (post.labels || []).join(', '),
-    url: new URL(`/posts/${encodeURIComponent(post.id)}`, getSiteUrl(req)).toString(),
+    url: new URL(`/posts/${encodeURIComponent(post.id)}`, siteUrl).toString(),
   };
 }
 
+function escapeXml(value = '') { return String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c])); }
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
 }
@@ -180,7 +192,7 @@ function adminDashboard() {
   const stats = getStats();
   const topReadCount = Math.max(1, ...stats.postReads.map(post => post.read_count));
   const topReadPosts = stats.postReads.slice(0, 5);
-  const readRows = topReadPosts.map(post => `<li><div><a href="/posts/${encodeURIComponent(post.id)}">${escapeHtml(post.title)}</a></div><meter min="0" max="${topReadCount}" value="${post.read_count}"></meter><strong>${formatNumber(post.read_count)}</strong></li>`).join('');
+  const readRows = topReadPosts.map(post => `<li><div><a href="/posts/${encodeURIComponent(post.id)}">${escapeHtml(post.title)}</a></div><meter min="0" max="${topReadCount}" value="${post.read_count}"></meter><strong>${formatNumber(post.read_count)}</strong><form method="post" action="/admin/read-metrics/${encodeURIComponent(post.id)}/purge"><button class="danger" type="submit">Purge</button></form></li>`).join('');
   return `<section class="admin-overview"><div><p class="eyebrow">Beheerder portal</p><h1>Overzicht</h1><p>Volg in één oogopslag hoeveel verhalen zijn ingevoerd, gelezen en beantwoord.</p></div><div class="stats-grid"><article><span>${formatNumber(stats.readCount)}</span><p>Gelezen posts</p></article><article><span>${formatNumber(stats.postCount)}</span><p>Ingevoerde posts</p></article><article><span>${formatNumber(stats.replyCount)}</span><p>Reacties</p></article></div></section><section class="panel metrics-panel"><div class="section-heading"><p class="eyebrow">Leesstatistieken</p><h2>Reads per post</h2><p>Een handig overzicht van welke vijf verhalen het vaakst zijn geopend.</p></div><ol class="read-metrics">${readRows || '<li class="empty">Nog geen verhalen om te meten.</li>'}</ol></section>`;
 }
 function adminReplyForm(post) {
@@ -202,8 +214,9 @@ async function handler(req, res) {
   if (method === 'GET' && pathname === '/robots.txt') return send(res, `User-agent: *\nAllow: /\nSitemap: ${new URL('/sitemap.xml', getSiteUrl(req)).toString()}\n`, 200, 'text/plain; charset=utf-8');
   if (method === 'GET' && pathname === '/sitemap.xml') {
     const siteUrl = getSiteUrl(req);
-    const urls = ['/', ...allPosts().map(post => `/posts/${encodeURIComponent(post.id)}`)];
-    return send(res, `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map(url => `\n  <url><loc>${escapeHtml(new URL(url, siteUrl).toString())}</loc></url>`).join('')}\n</urlset>`, 200, 'application/xml; charset=utf-8');
+    const posts = allPosts();
+    const urls = [{ loc: '/', lastmod: new Date().toISOString(), changefreq: 'daily', priority: '1.0' }, ...posts.map(post => ({ loc: `/posts/${encodeURIComponent(post.id)}`, lastmod: toIsoDate(post.updated_at || post.created_at), changefreq: 'weekly', priority: '0.8' }))];
+    return send(res, `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map(url => `\n  <url>\n    <loc>${escapeXml(new URL(url.loc, siteUrl).toString())}</loc>\n    <lastmod>${escapeXml(url.lastmod)}</lastmod>\n    <changefreq>${url.changefreq}</changefreq>\n    <priority>${url.priority}</priority>\n  </url>`).join('')}\n</urlset>`, 200, 'application/xml; charset=utf-8');
   }
   if (method === 'GET' && pathname === '/') {
     const q = (req.urlObj.searchParams.get('q') || '').trim();
@@ -233,7 +246,14 @@ async function handler(req, res) {
   if (method === 'GET' && pathname.startsWith('/posts/')) {
     const id = decodeURIComponent(pathname.split('/').pop()); const post = allPosts().find(item => item.id === id);
     if (!post) return send(res, layout('Niet gevonden', '<p class="empty">Dit verhaal bestaat niet.</p>', { admin: isAdmin(req) }), 404);
-    return send(res, layout(post.title, `<article class="story" data-post-id="${escapeHtml(post.id)}"><a href="/">← terug</a><p class="eyebrow">${escapeHtml(post.author)}</p><h1>${escapeHtml(post.title)}</h1><div class="labels">${(post.labels||[]).map(l=>`<span class="label">${escapeHtml(l)}</span>`).join('')}</div><div class="body">${escapeHtml(post.body).replace(/\n/g, '<br>')}</div>${renderReplies(post, { admin: isAdmin(req) })}${isAdmin(req) ? `<p><a class="button" href="/admin/edit/${post.id}">Bewerken</a></p>${adminReplyForm(post)}` : ''}</article>`, { admin: isAdmin(req), description: toSeoDescription(post.body, post.title), canonicalPath: `/posts/${encodeURIComponent(post.id)}`, type: 'article', siteUrl: getSiteUrl(req), structuredData: postStructuredData(post, req) }));
+    return send(res, layout(post.title, `${isAdmin(req) ? '<article class="story">' : `<article class="story" data-post-id="${escapeHtml(post.id)}">`}<a href="/">← terug</a><p class="eyebrow">${escapeHtml(post.author)}</p><h1>${escapeHtml(post.title)}</h1><div class="labels">${(post.labels||[]).map(l=>`<span class="label">${escapeHtml(l)}</span>`).join('')}</div><div class="body">${escapeHtml(post.body).replace(/\n/g, '<br>')}</div>${renderReplies(post, { admin: isAdmin(req) })}${isAdmin(req) ? `<p><a class="button" href="/admin/edit/${post.id}">Bewerken</a></p>${adminReplyForm(post)}` : ''}</article>`, { admin: isAdmin(req), description: toSeoDescription(post.body, post.title), canonicalPath: `/posts/${encodeURIComponent(post.id)}`, type: 'article', siteUrl: getSiteUrl(req), structuredData: postStructuredData(post, req) }));
+  }
+
+  if (method === 'POST' && pathname.startsWith('/admin/read-metrics/') && pathname.endsWith('/purge')) {
+    if (requireAdmin(req,res)) return;
+    const [, , , postId] = pathname.split('/').map(decodeURIComponent);
+    purgePostRead(postId);
+    return redirect(res, '/admin');
   }
   if (method === 'GET' && pathname === '/login') return send(res, layout('Login', `<section class="login-hero"><div><p class="eyebrow">Beheerder portal</p><h1>Beheerlogin</h1><p>Log in om het Hyperpedia-archief aan te vullen, verhalen bij te werken en reacties te beheren.</p></div><form method="post" action="/login" class="login-card stack"><label>Gebruikersnaam<input name="username" autocomplete="username" required></label><label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label><button>Inloggen</button></form></section>`));
   if (method === 'POST' && pathname === '/login') { const body = await collect(req); const admin = getAdmin(); if (!admin || admin.username !== body.username || !verifyPassword(body.password || '', admin)) return send(res, layout('Login', '<section class="panel narrow"><h1>Beheerlogin</h1><p>Controleer je gegevens.</p><a href="/login">Opnieuw proberen</a></section>', { error: 'Inloggen mislukt.' }), 401); const sid = crypto.randomBytes(32).toString('hex'); sessions.set(sid, true); res.writeHead(302, { Location: '/admin', 'Set-Cookie': `hyperpedia_session=${sid}.${sign(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}` }); return res.end(); }
