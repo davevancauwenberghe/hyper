@@ -274,6 +274,66 @@ test('homepage paginates forum posts in groups of sixteen', async () => {
   }
 });
 
+test('pagination shows a moving window of no more than three pages', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.savePosts(Array.from({ length: 80 }, (_, index) => ({ id: `post-${index}`, author: 'Naam', title: `Titel ${index}`, body: 'Tekst', labels: [], replies: [] })));
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const html = await (await fetch(`http://127.0.0.1:${server.address().port}/?page=3`)).text();
+    assert.deepEqual([...html.matchAll(/class="(?:page-link|page-current)"[^>]*>(\d+)</g)].map(match => match[1]), ['2', '3', '4']);
+    assert.doesNotMatch(html, /class="page-link"[^>]*>5</);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('selected homepage label is highlighted and links back to all posts', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  require('../src/store').savePosts([{ id: '1', author: 'Naam', title: 'Titel', body: 'Tekst', labels: ['ademhaling'], replies: [] }]);
+  const { server } = require('../src/server');
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const html = await (await fetch(`http://127.0.0.1:${server.address().port}/?label=ademhaling`)).text();
+    assert.match(html, /class="label selected" href="\/" aria-current="true">ademhaling/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('login blocks an address for sixty seconds after two failed attempts', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  require('../src/store').saveAdmin('beheerder', 'goed-wachtwoord');
+  const { server } = require('../src/server');
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${server.address().port}/login`;
+  const options = { method: 'POST', body: new URLSearchParams({ username: 'beheerder', password: 'fout' }) };
+  try {
+    const first = await fetch(url, options);
+    const second = await fetch(url, options);
+    assert.equal(first.status, 401);
+    assert.equal(second.status, 429);
+    assert.equal(second.headers.get('retry-after'), '60');
+    assert.match(await second.text(), /role="alert"/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('homepage combines the hero and auto-rotating stories of the day carousel', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;

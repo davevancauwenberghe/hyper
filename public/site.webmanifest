@@ -1,0 +1,12 @@
+{
+  "name": "Hyperpedia",
+  "short_name": "Hyperpedia",
+  "description": "Een encyclopedie met herkenbare verhalen over hyperventilatie, stress en lichamelijke sensaties.",
+  "lang": "nl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f0e8",
+  "theme_color": "#f4f0e8",
+  "icons": []
+}

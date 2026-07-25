@@ -9,6 +9,9 @@ primary_region = 'ams'
 [build]
   dockerfile = 'Dockerfile'
 
+[deploy]
+strategy = 'immediate'
+
 [[mounts]]
   source = 'hyper_data'
   destination = '/data'
@@ -19,6 +22,13 @@ primary_region = 'ams'
   auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = '10s'
+    interval = '15s'
+    method = 'GET'
+    path = '/'
+    timeout = '5s'
 
   [http_service.concurrency]
     type = 'requests'

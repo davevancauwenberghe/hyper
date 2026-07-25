@@ -37,7 +37,7 @@ textarea{resize:vertical}
 .card-actions{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-top:auto}
 .card-actions .button{padding:.62rem .9rem;font-size:.84rem}
 .story{max-width:none;margin:2rem auto;padding:clamp(1.5rem,4vw,3rem)}
-.story h1{font-size:clamp(2rem,5vw,3.4rem);max-width:18ch}
+.story h1{font-size:clamp(2rem,5vw,3.4rem);max-width:min(28ch,100%)}
 .body{margin-top:2rem;font-size:1.11rem}
 .replies{margin-top:2rem;padding-top:1.5rem;border-top:1px solid var(--line)}
 .replies h2,.reply-panel h2{margin-top:0}
@@ -53,6 +53,7 @@ textarea{resize:vertical}
 .login-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,420px);gap:clamp(1rem,3vw,2rem);align-items:center;min-height:calc(100vh - 11rem)}
 .login-hero p:not(.eyebrow),.external-forum-cta p{color:var(--muted);max-width:54ch}
 .login-card{background:color-mix(in srgb,var(--paper) 94%,transparent);border:1px solid var(--line);border-radius:1.4rem;padding:1.25rem;box-shadow:0 10px 28px rgba(71,55,80,.08)}
+.login-error{margin:0;padding:.85rem 1rem;border:1px solid #d88;border-radius:.85rem;background:#ffe8e8;color:#752626;font:700 .9rem/1.45 system-ui,sans-serif}
 .external-forum-cta{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;margin-top:1.5rem}
 .external-forum-cta h2{font-size:clamp(1.6rem,3vw,2.4rem);margin:.3rem 0 .8rem;max-width:16ch}
 .external-forum-cta .button{white-space:nowrap}
@@ -74,6 +75,7 @@ textarea{resize:vertical}
 .page-link,.page-current{min-width:2.35rem;text-align:center;border-radius:999px;padding:.55rem .75rem;font:700 .9rem system-ui,sans-serif;text-decoration:none}
 .page-link{background:var(--lav-2);color:var(--ink)}
 .page-current{background:var(--ink);color:var(--paper)}
+.label.selected{background:var(--ink);border-color:var(--ink);color:var(--paper);box-shadow:0 0 0 3px color-mix(in srgb,var(--ink) 14%,transparent)}
 .disabled{opacity:.48;pointer-events:none}
 .empty{color:var(--muted);padding:2rem}
 .daily-stories{margin:0}
