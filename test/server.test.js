@@ -334,6 +334,38 @@ test('login blocks an address for sixty seconds after two failed attempts', asyn
   }
 });
 
+test('login failures reset after a lock or inactive attempt expires', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  require('../src/store').saveAdmin('beheerder', 'goed-wachtwoord');
+  const { server } = require('../src/server');
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${server.address().port}/login`;
+  const originalDateNow = Date.now;
+  let now = originalDateNow();
+  Date.now = () => now;
+  const fail = () => fetch(url, {
+    method: 'POST',
+    body: new URLSearchParams({ username: 'beheerder', password: 'fout' }),
+  });
+  try {
+    assert.equal((await fail()).status, 401);
+    assert.equal((await fail()).status, 429);
+
+    now += 60_001;
+    assert.equal((await fail()).status, 401);
+
+    now += 15 * 60_000 + 1;
+    assert.equal((await fail()).status, 401);
+  } finally {
+    Date.now = originalDateNow;
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('homepage combines the hero and auto-rotating stories of the day carousel', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
