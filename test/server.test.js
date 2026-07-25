@@ -274,6 +274,39 @@ test('homepage paginates forum posts in groups of sixteen', async () => {
   }
 });
 
+test('homepage serves eighteen posts for a three-column grid and offers direct page selection', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  const store = require('../src/store');
+  store.savePosts(Array.from({ length: 37 }, (_, index) => ({
+    id: `post-${String(index + 1).padStart(2, '0')}`,
+    author: 'Naam',
+    title: `Post ${String(index + 1).padStart(2, '0')}`,
+    body: 'Tekst',
+    labels: [],
+    replies: [],
+  })));
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/?perPage=18`);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /data-posts-per-page="18"/);
+    assert.match(html, /Post 18/);
+    assert.doesNotMatch(html, /Post 19/);
+    assert.match(html, /data-page-select/);
+    assert.match(html, /<option value="\/\?page=2&amp;perPage=18">Pagina 2 van 3<\/option>/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('pagination shows a moving window of no more than three pages', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;

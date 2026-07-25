@@ -68,6 +68,34 @@ if (dailyStories) {
   scheduleMidnightRefresh();
 }
 
+for (const pageSelect of document.querySelectorAll('[data-page-select]')) {
+  pageSelect.addEventListener('change', () => {
+    window.location.assign(pageSelect.value);
+  });
+}
+
+const postGrid = document.querySelector('[data-post-grid]');
+if (postGrid) {
+  let resizeTimer;
+  const syncPageSizeWithColumns = () => {
+    const columnCount = getComputedStyle(postGrid).gridTemplateColumns.split(/\s+/).filter(Boolean).length;
+    const desiredPageSize = columnCount === 3 ? 18 : 16;
+    if (Number(postGrid.dataset.postsPerPage) === desiredPageSize) return;
+
+    const url = new URL(window.location.href);
+    if (desiredPageSize === 18) url.searchParams.set('perPage', '18');
+    else url.searchParams.delete('perPage');
+    url.searchParams.delete('page');
+    window.location.replace(url);
+  };
+
+  syncPageSizeWithColumns();
+  window.addEventListener('resize', () => {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(syncPageSizeWithColumns, 150);
+  });
+}
+
 
 const infoDialog = document.querySelector('[data-info-dialog]');
 const openInfoButtons = document.querySelectorAll('[data-info-open]');
