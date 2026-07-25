@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const { allPosts, savePosts, recordPostRead, purgePostRead, getStats, getAdmin, verifyPassword } = require('./store');
 const sessionSecret = getSessionSecret();
 const POSTS_PER_PAGE = 16;
+const THREE_COLUMN_POSTS_PER_PAGE = 18;
 const STORIES_OF_THE_DAY_COUNT = 4;
 const LOGIN_MAX_FAILURES = 2;
 const LOGIN_LOCK_MS = 60_000;
@@ -173,20 +174,22 @@ function postCard(post) {
   return `<article class="card"><div class="card-top"><p class="eyebrow">${escapeHtml(post.author)}</p>${labels.map(l => `<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div><h2><a href="/posts/${post.id}">${escapeHtml(post.title)}</a></h2><p>${escapeHtml(post.body).slice(0, 230)}${post.body.length > 230 ? '…' : ''}</p><div class="card-actions"><a class="button secondary" href="/posts/${post.id}" aria-label="Lees verder: ${escapeHtml(post.title)}">Lees verder</a>${(post.replies || []).length ? `<span class="reply-count">${post.replies.length} reactie${post.replies.length === 1 ? '' : 's'}</span>` : ''}</div></article>`;
 }
 
-function pageUrl({ q = '', label = '', page = 1 } = {}) {
+function pageUrl({ q = '', label = '', page = 1, postsPerPage = POSTS_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (label) params.set('label', label);
   if (page > 1) params.set('page', String(page));
+  if (postsPerPage === THREE_COLUMN_POSTS_PER_PAGE) params.set('perPage', String(postsPerPage));
   const query = params.toString();
   return `/${query ? `?${query}` : ''}`;
 }
-function renderPagination({ q = '', label = '', page = 1, totalPages = 1, totalPosts = 0 } = {}) {
+function renderPagination({ q = '', label = '', page = 1, totalPages = 1, totalPosts = 0, postsPerPage = POSTS_PER_PAGE } = {}) {
   if (totalPages <= 1) return '';
 
   const firstVisiblePage = Math.min(Math.max(page - 1, 1), Math.max(totalPages - 2, 1));
   const pages = Array.from({ length: Math.min(3, totalPages) }, (_, index) => firstVisiblePage + index);
-  return `<nav class="pagination" aria-label="Forum posts pagina's"><p>Pagina ${page} van ${totalPages} · ${formatNumber(totalPosts)} verhalen</p><div><a class="button secondary${page === 1 ? ' disabled' : ''}" href="${page === 1 ? '#' : pageUrl({ q, label, page: page - 1 })}" aria-label="Vorige pagina"${page === 1 ? ' aria-disabled="true" tabindex="-1"' : ''}>← Vorige</a>${pages.map(number => number === page ? `<span class="page-current" aria-current="page">${number}</span>` : `<a class="page-link" href="${pageUrl({ q, label, page: number })}">${number}</a>`).join('')}<a class="button secondary${page === totalPages ? ' disabled' : ''}" href="${page === totalPages ? '#' : pageUrl({ q, label, page: page + 1 })}" aria-label="Volgende pagina"${page === totalPages ? ' aria-disabled="true" tabindex="-1"' : ''}>Volgende →</a></div></nav>`;
+  const pageOptions = Array.from({ length: totalPages }, (_, index) => index + 1).map(number => `<option value="${escapeHtml(pageUrl({ q, label, page: number, postsPerPage }))}"${number === page ? ' selected' : ''}>Pagina ${number} van ${totalPages}</option>`).join('');
+  return `<nav class="pagination" aria-label="Forum posts pagina's"><label class="page-picker"><span class="visually-hidden">Ga naar pagina</span><select data-page-select aria-label="Pagina ${page} van ${totalPages}; selecteer een pagina">${pageOptions}</select><span>· ${formatNumber(totalPosts)} verhalen</span></label><div><a class="button secondary${page === 1 ? ' disabled' : ''}" href="${page === 1 ? '#' : pageUrl({ q, label, page: page - 1, postsPerPage })}" aria-label="Vorige pagina"${page === 1 ? ' aria-disabled="true" tabindex="-1"' : ''}>← Vorige</a>${pages.map(number => number === page ? `<span class="page-current" aria-current="page">${number}</span>` : `<a class="page-link" href="${pageUrl({ q, label, page: number, postsPerPage })}">${number}</a>`).join('')}<a class="button secondary${page === totalPages ? ' disabled' : ''}" href="${page === totalPages ? '#' : pageUrl({ q, label, page: page + 1, postsPerPage })}" aria-label="Volgende pagina"${page === totalPages ? ' aria-disabled="true" tabindex="-1"' : ''}>Volgende →</a></div></nav>`;
 }
 
 function burnoutInsightCta() {
@@ -264,14 +267,15 @@ async function handler(req, res) {
     });
     if (label) posts = posts.filter(p => (p.labels || []).includes(label));
     const requestedPage = Number.parseInt(req.urlObj.searchParams.get('page') || '1', 10);
+    const postsPerPage = Number.parseInt(req.urlObj.searchParams.get('perPage') || '', 10) === THREE_COLUMN_POSTS_PER_PAGE ? THREE_COLUMN_POSTS_PER_PAGE : POSTS_PER_PAGE;
     const totalPosts = posts.length;
-    const totalPages = Math.max(1, Math.ceil(totalPosts / POSTS_PER_PAGE));
+    const totalPages = Math.max(1, Math.ceil(totalPosts / postsPerPage));
     const page = Math.min(Math.max(Number.isNaN(requestedPage) ? 1 : requestedPage, 1), totalPages);
-    const visiblePosts = posts.slice((page - 1) * POSTS_PER_PAGE, page * POSTS_PER_PAGE);
+    const visiblePosts = posts.slice((page - 1) * postsPerPage, page * postsPerPage);
     const allLabels = [...new Set(allPosts().flatMap(p => p.labels || []))].sort((a,b)=>a.localeCompare(b,'nl'));
-    const pagination = renderPagination({ q, label, page, totalPages, totalPosts });
+    const pagination = renderPagination({ q, label, page, totalPages, totalPosts, postsPerPage });
     const dailyStories = storiesOfTheDay(allPosts());
-    return send(res, layout('Start', `<section class="hero home-hero"><div class="hero-copy"><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van stressignalen</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div><section class="daily-stories" aria-labelledby="daily-stories-title"><div class="section-heading"><p class="eyebrow" id="daily-stories-title">Verhalen van de dag</p></div>${renderStoriesOfTheDay(dailyStories)}</section></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l => { const selected = l === label; return `<a class="label${selected ? ' selected' : ''}" href="${selected ? pageUrl({ q }) : pageUrl({ q, label: l })}"${selected ? ' aria-current="true"' : ''}>${escapeHtml(l)}</a>`; }).join('')}</div></section><section class="grid">${visiblePosts.length ? visiblePosts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>${pagination}${burnoutInsightCta()}`, { admin: isAdmin(req), canonicalPath: requestPathWithQuery(req), siteUrl: getSiteUrl(req), structuredData: homepageStructuredData(posts, req) }));
+    return send(res, layout('Start', `<section class="hero home-hero"><div class="hero-copy"><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van stressignalen</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div><section class="daily-stories" aria-labelledby="daily-stories-title"><div class="section-heading"><p class="eyebrow" id="daily-stories-title">Verhalen van de dag</p></div>${renderStoriesOfTheDay(dailyStories)}</section></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l => { const selected = l === label; return `<a class="label${selected ? ' selected' : ''}" href="${selected ? pageUrl({ q }) : pageUrl({ q, label: l })}"${selected ? ' aria-current="true"' : ''}>${escapeHtml(l)}</a>`; }).join('')}</div></section><section class="grid" data-post-grid data-posts-per-page="${postsPerPage}">${visiblePosts.length ? visiblePosts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>${pagination}${burnoutInsightCta()}`, { admin: isAdmin(req), canonicalPath: requestPathWithQuery(req), siteUrl: getSiteUrl(req), structuredData: homepageStructuredData(posts, req) }));
   }
   if (method === 'POST' && pathname.startsWith('/posts/') && pathname.endsWith('/read')) {
     const parts = pathname.split('/');
