@@ -6,6 +6,9 @@ const { allPosts, savePosts, recordPostRead, purgePostRead, getStats, getAdmin, 
 const sessionSecret = getSessionSecret();
 const POSTS_PER_PAGE = 16;
 const STORIES_OF_THE_DAY_COUNT = 4;
+const LOGIN_MAX_FAILURES = 2;
+const LOGIN_LOCK_MS = 60_000;
+const loginAttempts = new Map();
 
 function getSessionSecret() {
   const configuredSecret = process.env.SESSION_SECRET;
@@ -30,6 +33,9 @@ const layout = (title, content, { admin = false, error = '', notice = '', descri
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="${metaDescription}">
+  <meta name="theme-color" content="#f4f0e8">
+  <meta name="application-name" content="Hyperpedia">
+  <link rel="manifest" href="/site.webmanifest">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
   <meta property="og:site_name" content="Hyperpedia">
@@ -37,7 +43,9 @@ const layout = (title, content, { admin = false, error = '', notice = '', descri
   <meta property="og:description" content="${metaDescription}">
   <meta property="og:type" content="${escapeHtml(type)}">
   <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="${escapeHtml(new URL('/social-preview.svg', siteUrl).toString())}">
+  <meta property="og:image:alt" content="Hyperpedia — verhalen die geruststellen">
+  <meta name="twitter:card" content="summary_large_image">
   <title>${safeTitle}</title>
   <link rel="stylesheet" href="/style.css">
   ${structuredData ? `<script type="application/ld+json">${JSON.stringify(structuredData).replace(/<\/script/gi, '<\\/script')}</script>` : ''}
@@ -60,7 +68,7 @@ const layout = (title, content, { admin = false, error = '', notice = '', descri
     <div class="info-dialog-card">
       <button class="info-dialog-close" type="button" aria-label="Sluit meer informatie" data-info-close>×</button>
       <p class="eyebrow">Waarom Hyperpedia?</p>
-      <h2 id="info-dialog-title">Een rustig archief voor herkenning</h2>
+      <h2 id="info-dialog-title">Een archief voor (h)erkenning</h2>
       <p>Hyperpedia is opgezet om oudere berichten uit de voormalige fora Angstfobietherapie en Therapiepsycholoog te archiveren en toegankelijk te houden, mocht die informatie ooit verdwijnen.</p>
       <p>Omdat beide fora gesloten zijn voor nieuwe posts en reacties, blijft Hyperpedia bewust een leesarchief. Het doel is herkenning en context bieden, zonder dat het verandert in geruststelling zoeken of medisch advies.</p>
       <div class="info-dialog-actions"><button type="button" data-info-close>Ik begrijp het</button></div>
@@ -173,12 +181,20 @@ function pageUrl({ q = '', label = '', page = 1 } = {}) {
 function renderPagination({ q = '', label = '', page = 1, totalPages = 1, totalPosts = 0 } = {}) {
   if (totalPages <= 1) return '';
 
-  const pages = Array.from({ length: totalPages }, (_, index) => index + 1);
+  const firstVisiblePage = Math.min(Math.max(page - 1, 1), Math.max(totalPages - 2, 1));
+  const pages = Array.from({ length: Math.min(3, totalPages) }, (_, index) => firstVisiblePage + index);
   return `<nav class="pagination" aria-label="Forum posts pagina's"><p>Pagina ${page} van ${totalPages} · ${formatNumber(totalPosts)} verhalen</p><div><a class="button secondary${page === 1 ? ' disabled' : ''}" href="${page === 1 ? '#' : pageUrl({ q, label, page: page - 1 })}" aria-label="Vorige pagina"${page === 1 ? ' aria-disabled="true" tabindex="-1"' : ''}>← Vorige</a>${pages.map(number => number === page ? `<span class="page-current" aria-current="page">${number}</span>` : `<a class="page-link" href="${pageUrl({ q, label, page: number })}">${number}</a>`).join('')}<a class="button secondary${page === totalPages ? ' disabled' : ''}" href="${page === totalPages ? '#' : pageUrl({ q, label, page: page + 1 })}" aria-label="Volgende pagina"${page === totalPages ? ' aria-disabled="true" tabindex="-1"' : ''}>Volgende →</a></div></nav>`;
 }
 
 function burnoutInsightCta() {
-  return `<section class="external-forum-cta" aria-labelledby="burnout-insight-title"><div><p class="eyebrow">Nieuwe vragen stellen</p><h2 id="burnout-insight-title">Zoek je een actieve plek om verder te praten?</h2><p>Hyperpedia bewaart oudere forumverhalen als rustig archief. Wil je zelf anoniem delen, reageren op anderen of herkenning vinden bij mensen die nu hetzelfde meemaken? Bezoek dan het open burnout forum van Burnout Insight.</p></div><a class="button" href="https://www.burnoutinsight.com" target="_blank" rel="noopener noreferrer">Naar Burnout Insight</a></section>`;
+  return `<section class="external-forum-cta" aria-labelledby="burnout-insight-title"><div><p class="eyebrow">Nieuwe vragen stellen</p><h2 id="burnout-insight-title">Zoek je een actieve plek om verder te praten?</h2><p>Hyperpedia bewaart oudere forumverhalen als archief. Wil je zelf anoniem delen, reageren op anderen of herkenning vinden bij mensen die nu hetzelfde meemaken? Bezoek dan het forum van Burnout Insight en kom in contact met lotgenoten.</p></div><a class="button" href="https://www.burnoutinsight.com" target="_blank" rel="noopener noreferrer">Naar Burnout Insight</a></section>`;
+}
+
+function loginPage(message = '') {
+  return `<section class="login-hero"><div><p class="eyebrow">Portal</p><h1>Beheerlogin</h1><p>Log in om het Hyperpedia-archief aan te vullen, verhalen bij te werken en reacties te beheren.</p></div><div class="login-card stack">${message ? `<p class="login-error" role="alert">${escapeHtml(message)}</p>` : ''}<form method="post" action="/login" class="stack"><label>Gebruikersnaam<input name="username" autocomplete="username" required></label><label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label><button>Inloggen</button></form></div></section>`;
+}
+function loginKey(req) {
+  return String(req.headers['fly-client-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
 }
 function renderReplies(post, { admin = false } = {}) {
   const replies = post.replies || [];
@@ -211,6 +227,8 @@ async function handler(req, res) {
   const pathname = req.urlObj.pathname;
   if (pathname === '/style.css') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'style.css')), 200, 'text/css');
   if (pathname === '/app.js') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js')), 200, 'application/javascript');
+  if (pathname === '/site.webmanifest') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'site.webmanifest')), 200, 'application/manifest+json; charset=utf-8');
+  if (pathname === '/social-preview.svg') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'social-preview.svg')), 200, 'image/svg+xml; charset=utf-8');
   if (method === 'GET' && pathname === '/robots.txt') return send(res, `User-agent: *\nAllow: /\nSitemap: ${new URL('/sitemap.xml', getSiteUrl(req)).toString()}\n`, 200, 'text/plain; charset=utf-8');
   if (method === 'GET' && pathname === '/sitemap.xml') {
     const siteUrl = getSiteUrl(req);
@@ -235,7 +253,7 @@ async function handler(req, res) {
     const allLabels = [...new Set(allPosts().flatMap(p => p.labels || []))].sort((a,b)=>a.localeCompare(b,'nl'));
     const pagination = renderPagination({ q, label, page, totalPages, totalPosts });
     const dailyStories = storiesOfTheDay(allPosts());
-    return send(res, layout('Start', `<section class="hero home-hero"><div class="hero-copy"><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van stressignalen</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div><section class="daily-stories" aria-labelledby="daily-stories-title"><div class="section-heading"><p class="eyebrow" id="daily-stories-title">Verhalen van de dag</p></div>${renderStoriesOfTheDay(dailyStories)}</section></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l=>`<a class="label" href="/?label=${encodeURIComponent(l)}">${escapeHtml(l)}</a>`).join('')}</div></section><section class="grid">${visiblePosts.length ? visiblePosts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>${pagination}${burnoutInsightCta()}`, { admin: isAdmin(req), canonicalPath: requestPathWithQuery(req), siteUrl: getSiteUrl(req), structuredData: homepageStructuredData(posts, req) }));
+    return send(res, layout('Start', `<section class="hero home-hero"><div class="hero-copy"><p class="eyebrow">Rustige herkenningsplek</p><h1>Een encyclopedie van stressignalen</h1><p>Lees forumverhalen zonder tijdsdruk. Zoek op klacht, gevoel, label of reactie en vind herkenning wanneer je zenuwstelsel luid klinkt.</p></div><section class="daily-stories" aria-labelledby="daily-stories-title"><div class="section-heading"><p class="eyebrow" id="daily-stories-title">Verhalen van de dag</p></div>${renderStoriesOfTheDay(dailyStories)}</section></section><section class="toolbar"><form><input name="q" value="${escapeHtml(q)}" placeholder="Zoek op tintelingen, benauwdheid, duizelig…"><button>Zoeken</button></form><div class="labels">${allLabels.map(l => { const selected = l === label; return `<a class="label${selected ? ' selected' : ''}" href="${selected ? pageUrl({ q }) : pageUrl({ q, label: l })}"${selected ? ' aria-current="true"' : ''}>${escapeHtml(l)}</a>`; }).join('')}</div></section><section class="grid">${visiblePosts.length ? visiblePosts.map(postCard).join('') : '<p class="empty">Nog geen verhalen gevonden.</p>'}</section>${pagination}${burnoutInsightCta()}`, { admin: isAdmin(req), canonicalPath: requestPathWithQuery(req), siteUrl: getSiteUrl(req), structuredData: homepageStructuredData(posts, req) }));
   }
   if (method === 'POST' && pathname.startsWith('/posts/') && pathname.endsWith('/read')) {
     const parts = pathname.split('/');
@@ -255,8 +273,28 @@ async function handler(req, res) {
     purgePostRead(postId);
     return redirect(res, '/admin');
   }
-  if (method === 'GET' && pathname === '/login') return send(res, layout('Login', `<section class="login-hero"><div><p class="eyebrow">Beheerder portal</p><h1>Beheerlogin</h1><p>Log in om het Hyperpedia-archief aan te vullen, verhalen bij te werken en reacties te beheren.</p></div><form method="post" action="/login" class="login-card stack"><label>Gebruikersnaam<input name="username" autocomplete="username" required></label><label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label><button>Inloggen</button></form></section>`));
-  if (method === 'POST' && pathname === '/login') { const body = await collect(req); const admin = getAdmin(); if (!admin || admin.username !== body.username || !verifyPassword(body.password || '', admin)) return send(res, layout('Login', '<section class="panel narrow"><h1>Beheerlogin</h1><p>Controleer je gegevens.</p><a href="/login">Opnieuw proberen</a></section>', { error: 'Inloggen mislukt.' }), 401); const sid = crypto.randomBytes(32).toString('hex'); sessions.set(sid, true); res.writeHead(302, { Location: '/admin', 'Set-Cookie': `hyperpedia_session=${sid}.${sign(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}` }); return res.end(); }
+  if (method === 'GET' && pathname === '/login') return send(res, layout('Login', loginPage()));
+  if (method === 'POST' && pathname === '/login') {
+    const key = loginKey(req);
+    const attempt = loginAttempts.get(key);
+    if (attempt?.lockedUntil > Date.now()) {
+      const seconds = Math.ceil((attempt.lockedUntil - Date.now()) / 1000);
+      res.setHeader('Retry-After', String(seconds));
+      return send(res, layout('Login', loginPage(`Te veel mislukte pogingen. Probeer het over ${seconds} seconden opnieuw.`)), 429);
+    }
+    const body = await collect(req);
+    const admin = getAdmin();
+    if (!admin || admin.username !== body.username || !verifyPassword(body.password || '', admin)) {
+      const failures = (attempt?.failures || 0) + 1;
+      const lockedUntil = failures >= LOGIN_MAX_FAILURES ? Date.now() + LOGIN_LOCK_MS : 0;
+      loginAttempts.set(key, { failures, lockedUntil });
+      if (lockedUntil) res.setHeader('Retry-After', '60');
+      const message = lockedUntil ? 'Te veel mislukte pogingen. Wacht 60 seconden voordat je het opnieuw probeert.' : 'Inloggen mislukt. Controleer je gebruikersnaam en wachtwoord.';
+      return send(res, layout('Login', loginPage(message)), lockedUntil ? 429 : 401);
+    }
+    loginAttempts.delete(key);
+    const sid = crypto.randomBytes(32).toString('hex'); sessions.set(sid, true); res.writeHead(302, { Location: '/admin', 'Set-Cookie': `hyperpedia_session=${sid}.${sign(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}` }); return res.end();
+  }
   if (method === 'POST' && pathname === '/logout') { res.writeHead(302, { Location: '/', 'Set-Cookie': 'hyperpedia_session=; Path=/; Max-Age=0' }); return res.end(); }
   if (method === 'GET' && pathname === '/admin') { if (requireAdmin(req,res)) return; return send(res, layout('Beheer', `${adminDashboard()}<section class="panel admin-form-panel"><h1>Nieuw verhaal toevoegen</h1><form method="post" action="/admin/posts" class="stack"><label>Titel<input name="title" required></label><label>Naam oorspronkelijke auteur<input name="author" required></label><label>Labels <small>komma-gescheiden</small><input name="labels" placeholder="ademhaling, duizeligheid, geruststelling"></label><label>Forumtekst<textarea name="body" rows="14" required></textarea></label><button>Opslaan</button></form></section>`, { admin: true })); }
   if (method === 'POST' && pathname === '/admin/posts') { if (requireAdmin(req,res)) return; const body = await collect(req); const posts = allPosts(); const id = crypto.randomBytes(6).toString('base64url'); posts.push({ id, author: body.author, title: body.title, body: body.body, labels: parseLabels(body.labels), replies: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() }); savePosts(posts); return redirect(res, `/posts/${id}`); }
