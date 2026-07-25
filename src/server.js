@@ -8,7 +8,10 @@ const POSTS_PER_PAGE = 16;
 const STORIES_OF_THE_DAY_COUNT = 4;
 const LOGIN_MAX_FAILURES = 2;
 const LOGIN_LOCK_MS = 60_000;
+const LOGIN_ATTEMPT_TTL_MS = 15 * 60_000;
+const LOGIN_ATTEMPT_CLEANUP_INTERVAL_MS = 60_000;
 const loginAttempts = new Map();
+let lastLoginAttemptCleanup = 0;
 
 function getSessionSecret() {
   const configuredSecret = process.env.SESSION_SECRET;
@@ -196,6 +199,21 @@ function loginPage(message = '') {
 function loginKey(req) {
   return String(req.headers['fly-client-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
 }
+function getLoginAttempt(key, now = Date.now()) {
+  if (now - lastLoginAttemptCleanup >= LOGIN_ATTEMPT_CLEANUP_INTERVAL_MS) {
+    for (const [attemptKey, attempt] of loginAttempts) {
+      if (attempt.expiresAt <= now || (attempt.lockedUntil && attempt.lockedUntil <= now)) loginAttempts.delete(attemptKey);
+    }
+    lastLoginAttemptCleanup = now;
+  }
+
+  const attempt = loginAttempts.get(key);
+  if (attempt && (attempt.expiresAt <= now || (attempt.lockedUntil && attempt.lockedUntil <= now))) {
+    loginAttempts.delete(key);
+    return undefined;
+  }
+  return attempt;
+}
 function renderReplies(post, { admin = false } = {}) {
   const replies = post.replies || [];
   if (!replies.length) return '';
@@ -276,9 +294,10 @@ async function handler(req, res) {
   if (method === 'GET' && pathname === '/login') return send(res, layout('Login', loginPage()));
   if (method === 'POST' && pathname === '/login') {
     const key = loginKey(req);
-    const attempt = loginAttempts.get(key);
-    if (attempt?.lockedUntil > Date.now()) {
-      const seconds = Math.ceil((attempt.lockedUntil - Date.now()) / 1000);
+    const now = Date.now();
+    const attempt = getLoginAttempt(key, now);
+    if (attempt?.lockedUntil > now) {
+      const seconds = Math.ceil((attempt.lockedUntil - now) / 1000);
       res.setHeader('Retry-After', String(seconds));
       return send(res, layout('Login', loginPage(`Te veel mislukte pogingen. Probeer het over ${seconds} seconden opnieuw.`)), 429);
     }
@@ -286,8 +305,8 @@ async function handler(req, res) {
     const admin = getAdmin();
     if (!admin || admin.username !== body.username || !verifyPassword(body.password || '', admin)) {
       const failures = (attempt?.failures || 0) + 1;
-      const lockedUntil = failures >= LOGIN_MAX_FAILURES ? Date.now() + LOGIN_LOCK_MS : 0;
-      loginAttempts.set(key, { failures, lockedUntil });
+      const lockedUntil = failures >= LOGIN_MAX_FAILURES ? now + LOGIN_LOCK_MS : 0;
+      loginAttempts.set(key, { failures, lockedUntil, expiresAt: now + LOGIN_ATTEMPT_TTL_MS });
       if (lockedUntil) res.setHeader('Retry-After', '60');
       const message = lockedUntil ? 'Te veel mislukte pogingen. Wacht 60 seconden voordat je het opnieuw probeert.' : 'Inloggen mislukt. Controleer je gebruikersnaam en wachtwoord.';
       return send(res, layout('Login', loginPage(message)), lockedUntil ? 429 : 401);
