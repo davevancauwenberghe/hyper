@@ -9,6 +9,9 @@ primary_region = 'ams'
 [build]
   dockerfile = 'Dockerfile'
 
+[env]
+  SITE_URL = 'https://hyperpedia.app'
+
 [deploy]
 strategy = 'immediate'
 
