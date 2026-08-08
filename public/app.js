@@ -1,23 +1,45 @@
 const root = document.documentElement;
-const saved = localStorage.getItem('theme');
-if (saved) root.dataset.theme = saved;
-document.querySelector('.theme-toggle')?.addEventListener('click', () => {
+const themeToggle = document.querySelector('.theme-toggle');
+const themeIcon = document.querySelector('[data-theme-icon]');
+const savedTheme = localStorage.getItem('theme');
+root.dataset.theme = savedTheme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+const syncThemeControl = () => {
+  const isDark = root.dataset.theme === 'dark';
+  if (themeToggle) {
+    themeToggle.setAttribute('aria-pressed', String(isDark));
+    themeToggle.setAttribute('aria-label', isDark ? 'Licht thema gebruiken' : 'Donker thema gebruiken');
+  }
+  if (themeIcon) themeIcon.textContent = isDark ? '☀' : '☾';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', isDark ? '#1d1916' : '#f7f1e8');
+};
+
+syncThemeControl();
+themeToggle?.addEventListener('click', () => {
   const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
   root.dataset.theme = next;
   localStorage.setItem('theme', next);
+  syncThemeControl();
 });
 
 for (const carousel of document.querySelectorAll('[data-daily-stories]')) {
   const slides = [...carousel.querySelectorAll('.daily-story-slide')];
   const dots = [...carousel.querySelectorAll('.daily-story-dot')];
+  const previous = carousel.querySelector('[data-daily-prev]');
+  const next = carousel.querySelector('[data-daily-next]');
   if (slides.length < 2) continue;
 
   let activeIndex = Math.max(0, slides.findIndex(slide => slide.classList.contains('is-active')));
-  let rotationTimer;
 
   const showStory = nextIndex => {
     activeIndex = (nextIndex + slides.length) % slides.length;
-    slides.forEach((slide, index) => slide.classList.toggle('is-active', index === activeIndex));
+    slides.forEach((slide, index) => {
+      const isActive = index === activeIndex;
+      slide.classList.toggle('is-active', isActive);
+      slide.hidden = !isActive;
+      if (isActive) slide.removeAttribute('aria-hidden');
+      else slide.setAttribute('aria-hidden', 'true');
+    });
     dots.forEach((dot, index) => {
       dot.classList.toggle('is-active', index === activeIndex);
       if (index === activeIndex) dot.setAttribute('aria-current', 'true');
@@ -25,27 +47,9 @@ for (const carousel of document.querySelectorAll('[data-daily-stories]')) {
     });
   };
 
-  const startRotation = () => {
-    window.clearInterval(rotationTimer);
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    rotationTimer = window.setInterval(() => showStory(activeIndex + 1), 5500);
-  };
-
-  const resetRotation = () => {
-    startRotation();
-  };
-
-  dots.forEach((dot, index) => dot.addEventListener('click', () => {
-    showStory(index);
-    resetRotation();
-  }));
-
-  carousel.addEventListener('mouseenter', () => window.clearInterval(rotationTimer));
-  carousel.addEventListener('mouseleave', startRotation);
-  carousel.addEventListener('focusin', () => window.clearInterval(rotationTimer));
-  carousel.addEventListener('focusout', startRotation);
-
-  startRotation();
+  dots.forEach((dot, index) => dot.addEventListener('click', () => showStory(index)));
+  previous?.addEventListener('click', () => showStory(activeIndex - 1));
+  next?.addEventListener('click', () => showStory(activeIndex + 1));
 }
 
 
@@ -73,29 +77,6 @@ for (const pageSelect of document.querySelectorAll('[data-page-select]')) {
     window.location.assign(pageSelect.value);
   });
 }
-
-const postGrid = document.querySelector('[data-post-grid]');
-if (postGrid) {
-  let resizeTimer;
-  const syncPageSizeWithColumns = () => {
-    const columnCount = getComputedStyle(postGrid).gridTemplateColumns.split(/\s+/).filter(Boolean).length;
-    const desiredPageSize = columnCount === 3 ? 18 : 16;
-    if (Number(postGrid.dataset.postsPerPage) === desiredPageSize) return;
-
-    const url = new URL(window.location.href);
-    if (desiredPageSize === 18) url.searchParams.set('perPage', '18');
-    else url.searchParams.delete('perPage');
-    url.searchParams.delete('page');
-    window.location.replace(url);
-  };
-
-  syncPageSizeWithColumns();
-  window.addEventListener('resize', () => {
-    window.clearTimeout(resizeTimer);
-    resizeTimer = window.setTimeout(syncPageSizeWithColumns, 150);
-  });
-}
-
 
 const infoDialog = document.querySelector('[data-info-dialog]');
 const openInfoButtons = document.querySelectorAll('[data-info-open]');

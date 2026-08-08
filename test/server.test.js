@@ -234,14 +234,14 @@ test('login page uses the landing page hero treatment', async () => {
   }
 });
 
-test('homepage paginates forum posts in groups of sixteen', async () => {
+test('homepage paginates forum posts in groups of eighteen', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
   delete require.cache[require.resolve('../src/store')];
   delete require.cache[require.resolve('../src/server')];
   const store = require('../src/store');
-  store.savePosts(Array.from({ length: 17 }, (_, index) => ({
+  store.savePosts(Array.from({ length: 19 }, (_, index) => ({
     id: `post-${String(index + 1).padStart(2, '0')}`,
     author: 'Originele naam',
     title: `Post ${String(index + 1).padStart(2, '0')}`,
@@ -260,21 +260,21 @@ test('homepage paginates forum posts in groups of sixteen', async () => {
     const secondHtml = await secondPage.text();
 
     assert.equal(firstPage.status, 200);
-    assert.match(firstHtml, /Post 16/);
-    assert.doesNotMatch(firstHtml, /Post 17/);
+    assert.match(firstHtml, /Post 18/);
+    assert.doesNotMatch(firstHtml, /Post 19/);
     assert.match(firstHtml, /Pagina 1 van 2/);
     assert.match(firstHtml, /href="\/\?page=2"/);
 
     assert.equal(secondPage.status, 200);
-    assert.doesNotMatch(secondHtml, /Post 16/);
-    assert.match(secondHtml, /Post 17/);
+    assert.doesNotMatch(secondHtml, /Post 18/);
+    assert.match(secondHtml, /Post 19/);
     assert.match(secondHtml, /Pagina 2 van 2/);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
 });
 
-test('homepage serves eighteen posts for a three-column grid and offers direct page selection', async () => {
+test('homepage uses one canonical eighteen-story page size and offers direct page selection', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
@@ -293,15 +293,20 @@ test('homepage serves eighteen posts for a three-column grid and offers direct p
 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/?perPage=18`);
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(base);
     const html = await response.text();
+    const stories = html.match(/<section class="stories-index"[\s\S]*?<\/section>/)[0];
+    const legacy = await fetch(`${base}/?label=ademhaling&perPage=18`, { redirect: 'manual' });
 
     assert.equal(response.status, 200);
-    assert.match(html, /data-posts-per-page="18"/);
-    assert.match(html, /Post 18/);
-    assert.doesNotMatch(html, /Post 19/);
+    assert.equal((stories.match(/<article class="card">/g) || []).length, 18);
+    assert.match(stories, /Post 18/);
+    assert.doesNotMatch(stories, /Post 19/);
     assert.match(html, /data-page-select/);
-    assert.match(html, /<option value="\/\?page=2&amp;perPage=18">Pagina 2 van 3<\/option>/);
+    assert.match(html, /<option value="\/\?page=2">Pagina 2 van 3<\/option>/);
+    assert.equal(legacy.status, 308);
+    assert.equal(legacy.headers.get('location'), '/?label=ademhaling');
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
@@ -399,7 +404,7 @@ test('login failures reset after a lock or inactive attempt expires', async () =
   }
 });
 
-test('homepage combines the hero and auto-rotating stories of the day carousel', async () => {
+test('homepage combines the calm hero with manually controlled stories of the day', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
   process.env.DATA_DIR = dir;
   process.env.SESSION_SECRET = 'x'.repeat(32);
@@ -426,18 +431,15 @@ test('homepage combines the hero and auto-rotating stories of the day carousel',
     assert.match(html, /class="hero home-hero"/);
     assert.match(html, /class="daily-stories"/);
     assert.match(html, /data-daily-stories/);
-    assert.match(html, /Een encyclopedie van stressignalen/);
-    assert.doesNotMatch(html, /Vier herkenbare ervaringen/);
-    assert.doesNotMatch(html, /De carrousel beweegt vanzelf/);
-    assert.doesNotMatch(html, /Europe\/Brussels/);
-    assert.doesNotMatch(html, /Dagelijkse herkenning/);
-    assert.doesNotMatch(html, /Deze vier verhalen wisselen automatisch/);
-    assert.doesNotMatch(html, /Uitgelicht verhaal/);
-    const dailySection = html.match(/<section class="daily-stories"[\s\S]*?<section class="toolbar">/)[0];
+    assert.match(html, /Herkenning voor onrustige momenten/);
+    assert.match(html, /Rustig lezen, zonder account/);
+    assert.doesNotMatch(html, /wisselen automatisch/);
+    const dailySection = html.match(/<section class="daily-stories"[\s\S]*?<section class="toolbar"/)[0];
     assert.equal((dailySection.match(/class="daily-story-slide/g) || []).length, 4);
     assert.equal((dailySection.match(/<article class="card">/g) || []).length, 4);
-    assert.doesNotMatch(dailySection, /data-daily-prev/);
-    assert.doesNotMatch(dailySection, /data-daily-next/);
+    assert.match(dailySection, /data-daily-prev/);
+    assert.match(dailySection, /data-daily-next/);
+    assert.equal((dailySection.match(/hidden aria-hidden="true"/g) || []).length, 3);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
@@ -460,6 +462,12 @@ test('public pages expose SEO metadata, structured data, robots, and sitemap URL
     const homeHtml = await home.text();
     const post = await fetch(`${base}/posts/post-1`);
     const postHtml = await post.text();
+    const login = await fetch(`${base}/login`);
+    const loginHtml = await login.text();
+    const label = await fetch(`${base}/?label=hartkloppingen`);
+    const labelHtml = await label.text();
+    const search = await fetch(`${base}/?q=stress`);
+    const searchHtml = await search.text();
     const robots = await fetch(`${base}/robots.txt`);
     const robotsText = await robots.text();
     const sitemap = await fetch(`${base}/sitemap.xml`);
@@ -469,9 +477,47 @@ test('public pages expose SEO metadata, structured data, robots, and sitemap URL
     assert.match(homeHtml, /<script type="application\/ld\+json">/);
     assert.match(postHtml, /<meta property="og:type" content="article">/);
     assert.match(postHtml, /DiscussionForumPosting/);
+    assert.match(postHtml, new RegExp(`<link rel="canonical" href="${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\/posts\/post-1">`));
+    assert.match(loginHtml, /<meta name="robots" content="noindex, nofollow">/);
+    assert.match(loginHtml, new RegExp(`<link rel="canonical" href="${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\/login">`));
+    assert.match(labelHtml, /<link rel="canonical" href="http:\/\/127\.0\.0\.1:[0-9]+\/\?label=hartkloppingen">/);
+    assert.match(searchHtml, /<meta name="robots" content="noindex, follow">/);
+    assert.match(searchHtml, /<link rel="canonical" href="http:\/\/127\.0\.0\.1:[0-9]+\/">/);
     assert.match(robotsText, /Sitemap: http:\/\/127\.0\.0\.1:/);
     assert.match(sitemapXml, /<loc>http:\/\/127\.0\.0\.1:[0-9]+\/posts\/post-1<\/loc>/);
   } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('configured production origin permanently redirects alternate schemes and hosts', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyperpedia-'));
+  const previousSiteUrl = process.env.SITE_URL;
+  process.env.DATA_DIR = dir;
+  process.env.SESSION_SECRET = 'x'.repeat(32);
+  process.env.SITE_URL = 'https://hyperpedia.app';
+  delete require.cache[require.resolve('../src/store')];
+  delete require.cache[require.resolve('../src/server')];
+  require('../src/store').savePosts([{ id: 'post-1', author: 'Naam', title: 'Titel', body: 'Tekst', labels: [], replies: [] }]);
+  const { server } = require('../src/server');
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const canonical = await fetch(`${base}/posts/post-1`, { headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'hyperpedia.app' } });
+    const canonicalHtml = await canonical.text();
+    const alternateHost = await fetch(`${base}/posts/post-1?from=www`, { headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'www.hyperpedia.app' }, redirect: 'manual' });
+    const insecure = await fetch(`${base}/?label=burnout`, { headers: { 'x-forwarded-proto': 'http', 'x-forwarded-host': 'hyperpedia.app' }, redirect: 'manual' });
+
+    assert.equal(canonical.status, 200);
+    assert.match(canonicalHtml, /<link rel="canonical" href="https:\/\/hyperpedia\.app\/posts\/post-1">/);
+    assert.equal(alternateHost.status, 308);
+    assert.equal(alternateHost.headers.get('location'), 'https://hyperpedia.app/posts/post-1?from=www');
+    assert.equal(insecure.status, 308);
+    assert.equal(insecure.headers.get('location'), 'https://hyperpedia.app/?label=burnout');
+  } finally {
+    if (previousSiteUrl === undefined) delete process.env.SITE_URL;
+    else process.env.SITE_URL = previousSiteUrl;
     await new Promise(resolve => server.close(resolve));
   }
 });

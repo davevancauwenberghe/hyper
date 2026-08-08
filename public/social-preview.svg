@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
   <title id="title">Hyperpedia</title>
   <desc id="description">Verhalen die geruststellen</desc>
-  <rect width="1200" height="630" fill="#f4f0e8"/>
-  <circle cx="1040" cy="100" r="260" fill="#dcd4eb"/>
-  <circle cx="115" cy="600" r="260" fill="#d7e0cf"/>
-  <text x="100" y="300" fill="#29232d" font-family="Georgia, serif" font-size="110" font-weight="700">Hyperpedia</text>
-  <text x="106" y="375" fill="#655d69" font-family="Arial, sans-serif" font-size="38">verhalen die geruststellen</text>
+  <rect width="1200" height="630" fill="#f7f1e8"/>
+  <circle cx="1040" cy="100" r="260" fill="#f0d8c4"/>
+  <circle cx="115" cy="600" r="260" fill="#dce7dc"/>
+  <text x="100" y="300" fill="#382d27" font-family="Georgia, serif" font-size="110" font-weight="700">Hyperpedia</text>
+  <text x="106" y="375" fill="#74655b" font-family="Arial, sans-serif" font-size="38">verhalen die geruststellen</text>
 </svg>

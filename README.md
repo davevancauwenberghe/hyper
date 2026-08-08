@@ -53,6 +53,10 @@ fly deploy
 
 De posts worden opgeslagen in `/data/hyperpedia-posts.json`, dus ze blijven behouden tussen deploys zolang het volume bestaat.
 
+## Canonieke productie-URL
+
+`fly.toml` zet `SITE_URL` vast op `https://hyperpedia.app`. De server gebruikt die waarde voor canonieke links, Open Graph, `robots.txt`, de sitemap en een permanente redirect van alternatieve hosts zoals `www.hyperpedia.app`. Laat Cloudflare daarnaast HTTP naar HTTPS omleiden; HTTP-URL's horen in Google Search Console als omleidingen te worden gerapporteerd en worden zelf niet geïndexeerd.
+
 ## Fly luisteradres
 
 Fly verwacht dat de Node-server op `0.0.0.0:8080` luistert. De startcode in `src/server.js` gebruikt daarom `process.env.PORT || 8080` en bindt aan `process.env.HOST || '0.0.0.0'`, zodat de Fly Proxy de app kan bereiken.
