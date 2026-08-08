@@ -102,7 +102,7 @@ function firstForwardedValue(value = '') {
   return String(header || '').split(',')[0].trim();
 }
 function redirectToCanonicalOrigin(req, res) {
-  if (!process.env.SITE_URL || req.headers['fly-health-check']) return false;
+  if (!process.env.SITE_URL) return false;
 
   const canonical = new URL(getSiteUrl());
   const requestProtocol = firstForwardedValue(req.headers['x-forwarded-proto']) || (req.socket.encrypted ? 'https' : 'http');
@@ -269,9 +269,10 @@ function withRequest(req) {
 
 async function handler(req, res) {
   withRequest(req);
-  if (redirectToCanonicalOrigin(req, res)) return;
   const method = req.method;
   const pathname = req.urlObj.pathname;
+  if (method === 'GET' && pathname === '/healthz') return send(res, 'ok\n', 200, 'text/plain; charset=utf-8');
+  if (redirectToCanonicalOrigin(req, res)) return;
   if (pathname === '/style.css') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'style.css')), 200, 'text/css');
   if (pathname === '/app.js') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js')), 200, 'application/javascript');
   if (pathname === '/site.webmanifest') return send(res, fs.readFileSync(path.join(__dirname, '..', 'public', 'site.webmanifest')), 200, 'application/manifest+json; charset=utf-8');

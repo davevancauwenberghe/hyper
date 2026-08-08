@@ -508,6 +508,7 @@ test('configured production origin permanently redirects alternate schemes and h
     const canonicalHtml = await canonical.text();
     const alternateHost = await fetch(`${base}/posts/post-1?from=www`, { headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'www.hyperpedia.app' }, redirect: 'manual' });
     const insecure = await fetch(`${base}/?label=burnout`, { headers: { 'x-forwarded-proto': 'http', 'x-forwarded-host': 'hyperpedia.app' }, redirect: 'manual' });
+    const health = await fetch(`${base}/healthz`, { headers: { 'x-forwarded-proto': 'http', 'x-forwarded-host': 'fly-internal' }, redirect: 'manual' });
 
     assert.equal(canonical.status, 200);
     assert.match(canonicalHtml, /<link rel="canonical" href="https:\/\/hyperpedia\.app\/posts\/post-1">/);
@@ -515,6 +516,9 @@ test('configured production origin permanently redirects alternate schemes and h
     assert.equal(alternateHost.headers.get('location'), 'https://hyperpedia.app/posts/post-1?from=www');
     assert.equal(insecure.status, 308);
     assert.equal(insecure.headers.get('location'), 'https://hyperpedia.app/?label=burnout');
+    assert.equal(health.status, 200);
+    assert.equal(await health.text(), 'ok\n');
+    assert.match(fs.readFileSync(path.join(__dirname, '..', 'fly.toml'), 'utf8'), /path = '\/healthz'/);
   } finally {
     if (previousSiteUrl === undefined) delete process.env.SITE_URL;
     else process.env.SITE_URL = previousSiteUrl;
