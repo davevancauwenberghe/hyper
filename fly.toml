@@ -30,7 +30,7 @@ strategy = 'immediate'
     grace_period = '10s'
     interval = '15s'
     method = 'GET'
-    path = '/'
+    path = '/healthz'
     timeout = '5s'
 
   [http_service.concurrency]
